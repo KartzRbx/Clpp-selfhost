@@ -25,13 +25,8 @@ const array<string> KEYWORDS = array<string>(
     "parallel", "pcall", "post", "pragma", "private", "public", "report",
     "return", "shl", "shr", "signal", "spawn", "static_cast", "string",
     "switch", "task", "template", "thread", "true", "try", "typename",
-    "void", "warn", "where", "while"
+    "void", "warn", "where", "while", "typeof"
 );
-const array<string> REMOVED_KEYWORDS = array<string>(
-    "cout", "endl", "from", "import", "namespace", "new", "static",
-    "struct", "type", "using", "variant"
-);
-
 def SymbolRule {
     string Text;
     TokenModule.TokenKind Kind;
@@ -205,10 +200,6 @@ export def Lexer {
         return find(KEYWORDS, text) >= 0;
     }
 
-    bool IsRemovedKeyword(string text) {
-        return find(REMOVED_KEYWORDS, text) >= 0;
-    }
-
     void ScanIdentifier(number startPosition, number startLine, number startColumn) {
         while (
             @this.Position < @this.SourceLength
@@ -228,8 +219,6 @@ export def Lexer {
             kind = TokenModule.TokenKind::LogicalOperator;
         } else if (text == "shl" or text == "shr") {
             kind = TokenModule.TokenKind::BitwiseOperator;
-        } else if (@this.IsRemovedKeyword(text)) {
-            kind = TokenModule.TokenKind::ReservedWord;
         } else if (@this.IsKeyword(text)) {
             kind = TokenModule.TokenKind::Keyword;
         }
@@ -610,12 +599,9 @@ export def Lexer {
         if (@this.TemplateDepth > 0) {
             TemplateFrame frame = @this.TemplateFrames[@this.TemplateDepth - 1];
             if (frame.InInterpolation) {
-                report(
-                    "unterminated template interpolation at " .: @this.Line .: ":" .: @this.Column
-                );
+                report("unterminated template interpolation at " .: @this.Line .: ":" .: @this.Column);
             } else {
-                report(
-                    "unterminated template at " .: frame.StartLine .: ":" .: frame.StartColumn
+                report("unterminated template at " .: frame.StartLine .: ":" .: frame.StartColumn
                 );
             }
             return @this.Tokens;

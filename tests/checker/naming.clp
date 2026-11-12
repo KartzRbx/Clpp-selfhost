@@ -28,6 +28,8 @@ void TestNamingStyleWarnings() {
     ) {
         report("naming style warning content mismatch");
     }
+
+    
 }
 
 void TestCompliantNamesHaveNoWarnings() {

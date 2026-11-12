@@ -45,7 +45,7 @@ export def NamingChecker {
         bool previousWasSeparator = false;
         number index = 0;
         while (index < len(name)) {
-            string character = name[index .. index + 1];
+            string character = name[index];
             bool isUpper = @this.IsUpperLetter(character);
             bool isLower = @this.IsLowerLetter(character);
             bool isDigit = @this.IsDigit(character);

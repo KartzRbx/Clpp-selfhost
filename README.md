@@ -16,6 +16,8 @@ O projeto está em desenvolvimento e ainda não possui uma versão executável c
 
 O lexer, o parser inicial e a validação opcional de estilo de nomes estão em construção.
 As diretivas `!style` configuram convenções para funções, variáveis e parâmetros.
+Ponto e vírgula não é obrigatório: uma quebra de linha encerra declarações e
+instruções; `;` continua aceito por compatibilidade.
 
 Não há ainda um comando de build ou execução documentado. Os testes dependem de um
 runtime CL++; o bootstrap Rust possui testes próprios.

@@ -1,7 +1,6 @@
 export enum class TokenKind {
     Identifier,
     Keyword,
-    ReservedWord,
     DecimalIntegerLiteral,
     BinaryIntegerLiteral,
     HexIntegerLiteral,

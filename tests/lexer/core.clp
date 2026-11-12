@@ -223,18 +223,30 @@ void TestEmptyAndTriviaOnlySources() {
 }
 
 void TestKeywordAndIdentifierClassification() {
-    string source = "thread buffer string struct any array optional find sqrt";
+    string source =
+        "thread buffer string cout endl from import namespace new static struct type using variant any array optional find sqrt typeof";
     array<Tokens.Token> tokens = Lexing.Lex(source);
 
     ExpectToken(source, tokens, 0, Tokens.TokenKind::Keyword, "thread");
     ExpectToken(source, tokens, 1, Tokens.TokenKind::Keyword, "buffer");
     ExpectToken(source, tokens, 2, Tokens.TokenKind::Keyword, "string");
-    ExpectToken(source, tokens, 3, Tokens.TokenKind::ReservedWord, "struct");
-    ExpectToken(source, tokens, 4, Tokens.TokenKind::Identifier, "any");
-    ExpectToken(source, tokens, 5, Tokens.TokenKind::Identifier, "array");
-    ExpectToken(source, tokens, 6, Tokens.TokenKind::Identifier, "optional");
-    ExpectToken(source, tokens, 7, Tokens.TokenKind::Identifier, "find");
-    ExpectToken(source, tokens, 8, Tokens.TokenKind::Identifier, "sqrt");
+    ExpectToken(source, tokens, 3, Tokens.TokenKind::Identifier, "cout");
+    ExpectToken(source, tokens, 4, Tokens.TokenKind::Identifier, "endl");
+    ExpectToken(source, tokens, 5, Tokens.TokenKind::Identifier, "from");
+    ExpectToken(source, tokens, 6, Tokens.TokenKind::Identifier, "import");
+    ExpectToken(source, tokens, 7, Tokens.TokenKind::Identifier, "namespace");
+    ExpectToken(source, tokens, 8, Tokens.TokenKind::Identifier, "new");
+    ExpectToken(source, tokens, 9, Tokens.TokenKind::Identifier, "static");
+    ExpectToken(source, tokens, 10, Tokens.TokenKind::Identifier, "struct");
+    ExpectToken(source, tokens, 11, Tokens.TokenKind::Identifier, "type");
+    ExpectToken(source, tokens, 12, Tokens.TokenKind::Identifier, "using");
+    ExpectToken(source, tokens, 13, Tokens.TokenKind::Identifier, "variant");
+    ExpectToken(source, tokens, 14, Tokens.TokenKind::Identifier, "any");
+    ExpectToken(source, tokens, 15, Tokens.TokenKind::Identifier, "array");
+    ExpectToken(source, tokens, 16, Tokens.TokenKind::Identifier, "optional");
+    ExpectToken(source, tokens, 17, Tokens.TokenKind::Identifier, "find");
+    ExpectToken(source, tokens, 18, Tokens.TokenKind::Identifier, "sqrt");
+    ExpectToken(source, tokens, 19, Tokens.TokenKind::Keyword, "typeof");
 }
 
 void TestOperatorCategories() {

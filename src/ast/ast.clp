@@ -1,6 +1,12 @@
 export enum class NodeKind {
     Module,
     LinkDeclaration,
+    TypeDeclaration,
+    TypeReference,
+    TypeIntersection,
+    ObjectType,
+    TypeField,
+    TypeofType,
     VariableDeclaration,
     FunctionDeclaration,
     Parameter,

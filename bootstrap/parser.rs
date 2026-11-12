@@ -99,6 +99,35 @@ pub struct ModuleHeader {
     pub naming_rules: Vec<NamingRule>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParsedModule {
+    pub header: ModuleHeader,
+    pub type_definitions: Vec<TypeDefinition>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeDefinition {
+    pub name: String,
+    pub value: TypeExpression,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TypeExpression {
+    Named {
+        name: String,
+        arguments: Vec<TypeExpression>,
+    },
+    Intersection(Vec<TypeExpression>),
+    Object(Vec<TypeField>),
+    Typeof(Vec<String>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeField {
+    pub name: String,
+    pub value: TypeExpression,
+}
+
 impl ModuleHeader {
     pub fn convention_for(&self, target: NamingTarget) -> Option<NamingConvention> {
         self.naming_rules
@@ -197,6 +226,10 @@ impl<'a> HeaderParser<'a> {
         Ok(text)
     }
 
+    fn is_at_end(&self) -> bool {
+        self.token().kind == TokenKind::EndOfFile
+    }
+
     fn parse_style_directive(&mut self, rules: &mut Vec<NamingRule>) -> Result<(), ParseError> {
         self.expect_text("!", "expected '!' before style directive")?;
         self.expect_text("style", "expected 'style' after '!'")?;
@@ -224,7 +257,7 @@ impl<'a> HeaderParser<'a> {
         Ok(())
     }
 
-    fn parse(mut self) -> Result<ModuleHeader, ParseError> {
+    fn parse_header(&mut self) -> Result<ModuleHeader, ParseError> {
         self.expect_text("!", "expected module header '!as Name'")?;
         self.expect_text("as", "expected 'as' after '!'")?;
         let name = self.expect_identifier("expected module name")?;
@@ -240,15 +273,124 @@ impl<'a> HeaderParser<'a> {
 
         Ok(ModuleHeader { name, naming_rules })
     }
+
+    fn parse_type_expression(&mut self) -> Result<TypeExpression, ParseError> {
+        let mut parts = vec![self.parse_type_primary()?];
+        while self.match_text("&") {
+            parts.push(self.parse_type_primary()?);
+        }
+        if parts.len() == 1 {
+            Ok(parts.remove(0))
+        } else {
+            Ok(TypeExpression::Intersection(parts))
+        }
+    }
+
+    fn parse_type_primary(&mut self) -> Result<TypeExpression, ParseError> {
+        if self.match_text("typeof") {
+            self.expect_text("(", "expected '(' after typeof")?;
+            let mut depth = 1;
+            let mut expression = Vec::new();
+            while depth > 0 {
+                if self.is_at_end() {
+                    return Err(self.error("unterminated typeof expression"));
+                }
+                let text = self.text(self.current).to_owned();
+                if text == "(" {
+                    depth += 1;
+                } else if text == ")" {
+                    depth -= 1;
+                    if depth == 0 {
+                        self.current += 1;
+                        break;
+                    }
+                }
+                expression.push(text);
+                self.current += 1;
+            }
+            return Ok(TypeExpression::Typeof(expression));
+        }
+
+        if self.match_text("{") {
+            let mut fields = Vec::new();
+            while !self.check_text("}") && !self.is_at_end() {
+                let line = self.token().line;
+                let name = self.expect_identifier("expected field name in object type")?;
+                self.expect_text(":", "expected ':' after object type field")?;
+                let value = self.parse_type_expression()?;
+                fields.push(TypeField { name, value });
+
+                if self.match_text(",") || self.match_text(";") {
+                    continue;
+                }
+                if self.check_text("}") {
+                    break;
+                }
+                if self.is_at_end() || self.token().line > line {
+                    continue;
+                }
+                return Err(self.error("expected ',' or line break after object type field"));
+            }
+            self.expect_text("}", "expected '}' after object type")?;
+            return Ok(TypeExpression::Object(fields));
+        }
+
+        let name = self.expect_identifier("expected type name")?;
+        let mut arguments = Vec::new();
+        if self.match_text("<") {
+            loop {
+                arguments.push(self.parse_type_expression()?);
+                if !self.match_text(",") {
+                    break;
+                }
+            }
+            self.expect_text(">", "expected '>' after type arguments")?;
+        }
+        Ok(TypeExpression::Named { name, arguments })
+    }
+
+    fn parse_type_definition(&mut self) -> Result<TypeDefinition, ParseError> {
+        self.match_text("export");
+        self.expect_text("def", "expected 'def' before type name")?;
+        let name = self.expect_identifier("expected type name after 'def'")?;
+        self.expect_text("=", "expected '=' after type name")?;
+        let value = self.parse_type_expression()?;
+
+        if !self.match_text(";")
+            && !self.is_at_end()
+            && self.token().line == self.tokens[self.current - 1].line
+        {
+            return Err(self.error("expected ';' or line break after type declaration"));
+        }
+        Ok(TypeDefinition { name, value })
+    }
+
+    fn parse_module(mut self) -> Result<ParsedModule, ParseError> {
+        let header = self.parse_header()?;
+        let mut type_definitions = Vec::new();
+        while !self.is_at_end() {
+            type_definitions.push(self.parse_type_definition()?);
+        }
+        Ok(ParsedModule {
+            header,
+            type_definitions,
+        })
+    }
 }
 
 pub fn parse_module_header(source: &str) -> Result<ModuleHeader, ParseError> {
-    HeaderParser::new(source)?.parse()
+    HeaderParser::new(source)?.parse_header()
+}
+
+pub fn parse_module(source: &str) -> Result<ParsedModule, ParseError> {
+    HeaderParser::new(source)?.parse_module()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_module_header, NamingConvention, NamingTarget};
+    use super::{
+        parse_module, parse_module_header, NamingConvention, NamingTarget, TypeExpression,
+    };
 
     #[test]
     fn parses_style_rules_in_module_header() {

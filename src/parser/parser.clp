@@ -1,3 +1,4 @@
+
 link "../ast/ast.clp" as Ast;
 link "../lexer/token.clp" as TokenModule;
 
@@ -36,6 +37,25 @@ export def Parser {
         }
         @this.Current += 1;
         return true;
+    }
+
+    void ExpectStatementTerminator(string statement) {
+        if (@this.MatchKind(TokenModule.TokenKind::Semicolon)) {
+            return;
+        }
+
+        if (
+            @this.IsAtEnd()
+            or @this.CheckKind(TokenModule.TokenKind::RightBrace)
+            or @this.Tokens[@this.Current].Line > @this.Tokens[@this.Current - 1].Line
+        ) {
+            return;
+        }
+
+        report(
+            "expected ';' or line break after " .: statement .: " at "
+                .: @this.Tokens[@this.Current].Line .: ":" .: @this.Tokens[@this.Current].Column
+        );
     }
 
     TokenModule.Token ExpectKind(TokenModule.TokenKind kind, string expectation) {
@@ -202,7 +222,7 @@ export def Parser {
             );
             alias = TokenModule.GetLexeme(@this.Source, aliasToken);
         }
-        @this.ExpectKind(TokenModule.TokenKind::Semicolon, "';' after link declaration");
+        @this.ExpectStatementTerminator("link declaration");
 
         return @this.NewNode(
             Ast.NodeKind::LinkDeclaration,
@@ -313,9 +333,164 @@ export def Parser {
         return initializer;
     }
 
+    Ast.Node ParseTypeExpression() {
+        Ast.Node left = @this.ParseTypePrimary();
+        while (@this.CheckText("&")) {
+            @this.Current += 1;
+            Ast.Node intersection = @this.NewNode(
+                Ast.NodeKind::TypeIntersection,
+                "&",
+                "",
+                "",
+                left.StartToken,
+                @this.Current
+            );
+            push(intersection.Children, left);
+            push(intersection.Children, @this.ParseTypePrimary());
+            intersection.EndToken = @this.Current;
+            left = intersection;
+        }
+        return left;
+    }
+
+    Ast.Node ParseTypePrimary() {
+        number startToken = @this.Current;
+
+        if (@this.MatchText("typeof")) {
+            @this.ExpectKind(TokenModule.TokenKind::LeftParen, "'(' after typeof");
+            Ast.Node expression = @this.ParseExpression(0);
+            @this.ExpectKind(TokenModule.TokenKind::RightParen, "')' after typeof expression");
+            Ast.Node typeOf = @this.NewNode(
+                Ast.NodeKind::TypeofType,
+                "",
+                "",
+                "",
+                startToken,
+                @this.Current
+            );
+            push(typeOf.Children, expression);
+            return typeOf;
+        }
+
+        if (@this.CheckKind(TokenModule.TokenKind::LeftBrace)) {
+            @this.Current += 1;
+            Ast.Node objectType = @this.NewNode(
+                Ast.NodeKind::ObjectType,
+                "",
+                "",
+                "",
+                startToken,
+                @this.Current
+            );
+            while (
+                not @this.CheckKind(TokenModule.TokenKind::RightBrace)
+                and not @this.IsAtEnd()
+            ) {
+                number fieldStart = @this.Current;
+                TokenModule.Token fieldName = @this.ExpectKind(
+                    TokenModule.TokenKind::Identifier,
+                    "field name in object type"
+                );
+                @this.ExpectKind(TokenModule.TokenKind::Colon, "':' after object type field");
+                Ast.Node fieldType = @this.ParseTypeExpression();
+                Ast.Node field = @this.NewNode(
+                    Ast.NodeKind::TypeField,
+                    TokenModule.GetLexeme(@this.Source, fieldName),
+                    "",
+                    "",
+                    fieldStart,
+                    @this.Current
+                );
+                push(field.Children, fieldType);
+                push(objectType.Children, field);
+
+                if (
+                    @this.MatchKind(TokenModule.TokenKind::Comma)
+                    or @this.MatchKind(TokenModule.TokenKind::Semicolon)
+                ) {
+                    continue;
+                }
+                if (@this.CheckKind(TokenModule.TokenKind::RightBrace)) {
+                    break;
+                }
+                if (
+                    @this.IsAtEnd()
+                    or @this.Tokens[@this.Current].Line
+                        > @this.Tokens[field.EndToken - 1].Line
+                ) {
+                    continue;
+                }
+                report(
+                    "expected ',' or line break after object type field at "
+                        .: @this.Tokens[@this.Current].Line
+                        .: ":" .: @this.Tokens[@this.Current].Column
+                );
+                break;
+            }
+            @this.ExpectKind(TokenModule.TokenKind::RightBrace, "'}' after object type");
+            objectType.EndToken = @this.Current;
+            return objectType;
+        }
+
+        TokenModule.Token typeToken = @this.Tokens[@this.Current];
+        if (not @this.IsTypeWord(@this.Current)) {
+            report(
+                "expected type name at " .: typeToken.Line .: ":" .: typeToken.Column
+            );
+        }
+        @this.Current += 1;
+        string typeName = TokenModule.GetLexeme(@this.Source, typeToken);
+        Ast.Node typeReference = @this.NewNode(
+            Ast.NodeKind::TypeReference,
+            "",
+            typeName,
+            "",
+            startToken,
+            @this.Current
+        );
+        if (@this.MatchText("<")) {
+            while (true) {
+                push(typeReference.Children, @this.ParseTypeExpression());
+                if (not @this.MatchKind(TokenModule.TokenKind::Comma)) {
+                    break;
+                }
+            }
+            @this.ExpectText(">", "'>' after type arguments");
+            typeReference.EndToken = @this.Current;
+        }
+        return typeReference;
+    }
+
+    Ast.Node ParseTypeDeclaration(bool isExported, number startToken) {
+        @this.ExpectText("def", "'def' before type name");
+        TokenModule.Token name = @this.ExpectKind(
+            TokenModule.TokenKind::Identifier,
+            "type name after 'def'"
+        );
+        @this.ExpectKind(TokenModule.TokenKind::AssignmentOperator, "'=' after type name");
+        Ast.Node typeExpression = @this.ParseTypeExpression();
+        Ast.Node declaration = @this.NewNode(
+            Ast.NodeKind::TypeDeclaration,
+            TokenModule.GetLexeme(@this.Source, name),
+            "",
+            "",
+            startToken,
+            @this.Current
+        );
+        declaration.IsExported = isExported;
+        push(declaration.Children, typeExpression);
+        @this.ExpectStatementTerminator("type declaration");
+        declaration.EndToken = @this.Current;
+        return declaration;
+    }
+
     Ast.Node ParseDeclarationOrStatement() {
         bool isExported = @this.MatchText("export");
         number startToken = @this.Current;
+
+        if (@this.CheckText("def")) {
+            return @this.ParseTypeDeclaration(isExported, startToken);
+        }
 
         if (@this.MatchText("auto")) {
             TokenModule.Token nameToken = @this.ExpectKind(
@@ -335,7 +510,7 @@ export def Parser {
             if (@this.MatchKind(TokenModule.TokenKind::AssignmentOperator)) {
                 declaration.Children = array<Ast.Node>(@this.ParseExpression(0));
             }
-            @this.ExpectKind(TokenModule.TokenKind::Semicolon, "';' after variable declaration");
+            @this.ExpectStatementTerminator("variable declaration");
             declaration.EndToken = @this.Current;
             return declaration;
         }
@@ -402,7 +577,7 @@ export def Parser {
             } else if (@this.IsCollectionTypeName(typeName)) {
                 push(declaration.Children, @this.CreateEmptyCollection(typeName, @this.Current));
             }
-            @this.ExpectKind(TokenModule.TokenKind::Semicolon, "';' after variable declaration");
+            @this.ExpectStatementTerminator("variable declaration");
             declaration.EndToken = @this.Current;
             return declaration;
         }
@@ -450,10 +625,15 @@ export def Parser {
                 startToken,
                 @this.Current
             );
-            if (not @this.CheckKind(TokenModule.TokenKind::Semicolon)) {
+            if (
+                not @this.CheckKind(TokenModule.TokenKind::Semicolon)
+                and not @this.IsAtEnd()
+                and not @this.CheckKind(TokenModule.TokenKind::RightBrace)
+                and @this.Tokens[@this.Current].Line == @this.Tokens[@this.Current - 1].Line
+            ) {
                 statement.Children = array<Ast.Node>(@this.ParseExpression(0));
             }
-            @this.ExpectKind(TokenModule.TokenKind::Semicolon, "';' after return");
+            @this.ExpectStatementTerminator("return");
             statement.EndToken = @this.Current;
             return statement;
         }
@@ -466,7 +646,7 @@ export def Parser {
         }
 
         Ast.Node expression = @this.ParseExpression(0);
-        @this.ExpectKind(TokenModule.TokenKind::Semicolon, "';' after expression");
+        @this.ExpectStatementTerminator("expression");
         Ast.Node statement = @this.NewNode(
             Ast.NodeKind::ExpressionStatement,
             "",
@@ -507,15 +687,31 @@ export def Parser {
         return false;
     }
 
-    number Precedence(string operator) {
-        if (operator == "=") return 1;
-        if (operator == "or") return 2;
-        if (operator == "and") return 3;
-        if (operator == "==" or operator == "!=" or operator == "<" or operator == "<=" or operator == ">" or operator == ">=") return 4;
-        if (operator == "..") return 5;
-        if (operator == "shl" or operator == "shr" or operator == "&" or operator == "|" or operator == "^") return 6;
-        if (operator == "+" or operator == "-" or operator == ".:") return 7;
-        if (operator == "*" or operator == "/" or operator == "%") return 8;
+    number Precedence(string op) {
+        if (op == "=") {
+            return 1;
+        }
+        if (op == "or") {
+            return 2;
+        }
+        if (op == "and") {
+            return 3;
+        }
+        if (op == "==" or op == "!=" or op == "<" or op == "<=" or op == ">" or op == ">=") {
+            return 4;
+        }
+        if (op == "..") {
+            return 5;
+        }
+        if (op == "shl" or op == "shr" or op == "&" or op == "|" or op == "^") {
+            return 6;
+        }
+        if (op == "+" or op == "-" or op == ".:") {
+            return 7;
+        }
+        if (op == "*" or op == "/" or op == "%") {
+            return 8;
+        }
         return 0;
     }
 
@@ -549,7 +745,7 @@ export def Parser {
                 continue;
             }
 
-            if (@this.MatchKind(TokenModule.TokenKind::Dot)) {
+            if (@this.MatchKind(TokenModule.TokenKind::MemberAccessOperator)) {
                 number startToken = left.StartToken;
                 TokenModule.Token member = @this.ExpectKind(
                     TokenModule.TokenKind::Identifier,
@@ -591,12 +787,12 @@ export def Parser {
                 @this.CheckKind(TokenModule.TokenKind::IncrementOperator)
                 and @this.Precedence("postfix") >= minimumPrecedence
             ) {
-                string operator = @this.Text(@this.Current);
+                string op = @this.Text(@this.Current);
                 number startToken = left.StartToken;
                 @this.Current += 1;
                 Ast.Node unary = @this.NewNode(
                     Ast.NodeKind::UnaryExpression,
-                    operator,
+                    op,
                     "postfix",
                     "",
                     startToken,
@@ -607,8 +803,8 @@ export def Parser {
                 continue;
             }
 
-            string operator = @this.Text(@this.Current);
-            number precedence = @this.Precedence(operator);
+            string op = @this.Text(@this.Current);
+            number precedence = @this.Precedence(op);
             if (precedence == 0 or precedence < minimumPrecedence) {
                 break;
             }
@@ -616,17 +812,17 @@ export def Parser {
             number startToken = left.StartToken;
             @this.Current += 1;
             number nextMinimum = precedence + 1;
-            if (operator == "=") {
+            if (op == "=") {
                 nextMinimum = precedence;
             }
             Ast.Node right = @this.ParseExpression(nextMinimum);
             Ast.NodeKind kind = Ast.NodeKind::BinaryExpression;
-            if (operator == "=") {
+            if (op == "=") {
                 kind = Ast.NodeKind::Assignment;
             }
             Ast.Node binary = @this.NewNode(
                 kind,
-                operator,
+                op,
                 "",
                 "",
                 startToken,
@@ -701,7 +897,7 @@ export def Parser {
                     @this.Current += 1;
                 }
             }
-            Ast.Node template = @this.NewNode(
+            Ast.Node templateNode = @this.NewNode(
                 Ast.NodeKind::LiteralExpression,
                 "template",
                 "string",
@@ -709,7 +905,7 @@ export def Parser {
                 startToken,
                 @this.Current
             );
-            return template;
+            return templateNode;
         }
 
         TokenModule.Token token = @this.Tokens[@this.Current];
@@ -758,6 +954,15 @@ export def Parser {
         );
     }
 
+    Ast.Node ParseDictionaryKey() {
+        if (@this.MatchKind(TokenModule.TokenKind::LeftBracket)) {
+            Ast.Node keyNode = @this.ParseExpression(0);
+            @this.ExpectKind(TokenModule.TokenKind::RightBracket, "']' after dictionary key");
+            return keyNode;
+        }
+        return @this.ParseExpression(2);
+    }
+
     Ast.Node ParseCollectionLiteral() {
         number startToken = @this.Current;
         @this.ExpectKind(TokenModule.TokenKind::LeftBrace, "'{' to start collection literal");
@@ -791,13 +996,7 @@ export def Parser {
         if (not @this.CheckKind(TokenModule.TokenKind::RightBrace)) {
             while (true) {
                 if (isDictionary) {
-                    Ast.Node key;
-                    if (@this.MatchKind(TokenModule.TokenKind::LeftBracket)) {
-                        key = @this.ParseExpression(0);
-                        @this.ExpectKind(TokenModule.TokenKind::RightBracket, "']' after dictionary key");
-                    } else {
-                        key = @this.ParseExpression(2);
-                    }
+                    Ast.Node keyNode = @this.ParseDictionaryKey();
                     @this.ExpectKind(TokenModule.TokenKind::AssignmentOperator, "'=' after dictionary key");
                     Ast.Node value = @this.ParseExpression(0);
                     Ast.Node entry = @this.NewNode(
@@ -805,10 +1004,10 @@ export def Parser {
                         "entry",
                         "",
                         "",
-                        key.StartToken,
+                        keyNode.StartToken,
                         value.EndToken
                     );
-                    push(entry.Children, key);
+                    push(entry.Children, keyNode);
                     push(entry.Children, value);
                     push(literal.Children, entry);
                 } else {

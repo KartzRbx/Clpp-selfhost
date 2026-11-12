@@ -19,6 +19,115 @@ void TestModuleHeaderWithoutSemicolon() {
     }
 }
 
+void TestOptionalStatementTerminators() {
+    string source =
+        "!as SemicolonFree\n"
+        .: "link \"../../src/lexer/token.clp\" as TokenModule\n"
+        .: "number count = 0\n"
+        .: "number getValue() {\n"
+        .: "    number local = count + 1\n"
+        .: "    count = local\n"
+        .: "    return local\n"
+        .: "}\n"
+        .: "void reset() {\n"
+        .: "    return\n"
+        .: "}\n"
+        .: "getValue()\n";
+    Ast.Module module = ParseSource(source);
+
+    if (len(module.Declarations) != 5) {
+        report("semicolon-free declaration count mismatch");
+    }
+
+    if (
+        module.Declarations[0].Kind != Ast.NodeKind::LinkDeclaration
+        or module.Declarations[1].Kind != Ast.NodeKind::VariableDeclaration
+    ) {
+        report("semicolon-free link or variable declaration was not parsed");
+    }
+
+    Ast.Node getValue = module.Declarations[2];
+    if (
+        getValue.Kind != Ast.NodeKind::FunctionDeclaration
+        or len(getValue.Children) != 1
+        or len(getValue.Children[0].Children) != 3
+    ) {
+        report("semicolon-free function body statements were not parsed");
+    }
+
+    Ast.Node reset = module.Declarations[3];
+    if (
+        reset.Kind != Ast.NodeKind::FunctionDeclaration
+        or len(reset.Children[0].Children) != 1
+        or reset.Children[0].Children[0].Kind != Ast.NodeKind::ReturnStatement
+    ) {
+        report("semicolon-free empty return was not parsed");
+    }
+
+    if (module.Declarations[4].Kind != Ast.NodeKind::ExpressionStatement) {
+        report("semicolon-free expression statement was not parsed");
+    }
+}
+
+void TestStructuralTypeDeclarations() {
+    string source =
+        "!as Types\n"
+        .: "def Sla = Vector2 & {\n"
+        .: "    Sla: string & {\n"
+        .: "        Child: number\n"
+        .: "    }\n"
+        .: "}\n"
+        .: "def Position = typeof(Vector2)\n";
+    Ast.Module module = ParseSource(source);
+
+    if (len(module.Declarations) != 2) {
+        report("type declaration count mismatch");
+    }
+
+    Ast.Node sla = module.Declarations[0];
+    if (
+        sla.Kind != Ast.NodeKind::TypeDeclaration
+        or sla.Name != "Sla"
+        or len(sla.Children) != 1
+    ) {
+        report("named type declaration was not parsed");
+    }
+
+    Ast.Node rootType = sla.Children[0];
+    if (
+        rootType.Kind != Ast.NodeKind::TypeIntersection
+        or rootType.Children[0].Kind != Ast.NodeKind::TypeReference
+        or rootType.Children[0].TypeName != "Vector2"
+        or rootType.Children[1].Kind != Ast.NodeKind::ObjectType
+    ) {
+        report("type intersection with an object type was not parsed");
+    }
+
+    Ast.Node field = rootType.Children[1].Children[0];
+    if (field.Kind != Ast.NodeKind::TypeField or field.Name != "Sla") {
+        report("object type field was not parsed");
+    }
+    Ast.Node nested = field.Children[0];
+    if (
+        nested.Kind != Ast.NodeKind::TypeIntersection
+        or nested.Children[0].TypeName != "string"
+        or nested.Children[1].Kind != Ast.NodeKind::ObjectType
+        or nested.Children[1].Children[0].Name != "Child"
+        or nested.Children[1].Children[0].Children[0].TypeName != "number"
+    ) {
+        report("nested structural field type was not parsed");
+    }
+
+    Ast.Node position = module.Declarations[1];
+    if (
+        position.Kind != Ast.NodeKind::TypeDeclaration
+        or position.Children[0].Kind != Ast.NodeKind::TypeofType
+        or position.Children[0].Children[0].Name != "Vector2"
+    ) {
+        report("typeof type expression was not parsed");
+    }
+}
+
 void TestTypedCollectionInitializers() {
     string source =
         "!as Collections;\n"
@@ -165,6 +274,8 @@ void TestDictionaryEntryKeys() {
 }
 
 TestModuleHeaderWithoutSemicolon();
+TestOptionalStatementTerminators();
+TestStructuralTypeDeclarations();
 TestTypedCollectionInitializers();
 TestDictionaryEntryKeys();
 post("parser core tests passed");
