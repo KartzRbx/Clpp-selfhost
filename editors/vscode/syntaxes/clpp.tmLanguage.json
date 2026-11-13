@@ -1,0 +1,437 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "CL++",
+  "scopeName": "source.clpp",
+  "fileTypes": [
+    "clp"
+  ],
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#directives"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#declarations"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#types"
+    },
+    {
+      "include": "#constants"
+    },
+    {
+      "include": "#this"
+    },
+    {
+      "include": "#enum-access"
+    },
+    {
+      "include": "#calls"
+    },
+    {
+      "include": "#operators"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.block.documentation.clpp",
+          "begin": "<<\\{",
+          "end": "\\}>>",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.definition.comment.begin.clpp"
+            }
+          },
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.definition.comment.end.clpp"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#doc-tags"
+            },
+            {
+              "match": "!\\w+",
+              "name": "invalid.illegal.unknown-doc-tag.clpp"
+            },
+            {
+              "include": "#string-double"
+            },
+            {
+              "include": "#annotations"
+            }
+          ]
+        },
+        {
+          "name": "comment.block.clpp",
+          "begin": "<<\\[",
+          "end": "\\]>>",
+          "patterns": [
+            {
+              "include": "#doc-tags"
+            },
+            {
+              "include": "#annotations"
+            }
+          ]
+        },
+        {
+          "name": "comment.line.clpp",
+          "begin": "<<",
+          "end": "$",
+          "patterns": [
+            {
+              "include": "#doc-tags"
+            },
+            {
+              "include": "#annotations"
+            },
+            {
+              "match": "\"(?:[^\"\\\\]|\\\\.)*\"",
+              "name": "string.quoted.double.comment.clpp"
+            }
+          ]
+        }
+      ]
+    },
+    "directives": {
+      "patterns": [
+        {
+          "match": "^\\s*(!)(as)\\s+([A-Za-z_]\\w*)",
+          "captures": {
+            "1": {
+              "name": "punctuation.definition.directive.clpp"
+            },
+            "2": {
+              "name": "keyword.control.directive.clpp"
+            },
+            "3": {
+              "name": "entity.name.namespace.clpp"
+            }
+          }
+        },
+        {
+          "match": "^\\s*(!)(style)\\b",
+          "captures": {
+            "1": {
+              "name": "punctuation.definition.directive.clpp"
+            },
+            "2": {
+              "name": "keyword.control.directive.clpp"
+            }
+          }
+        }
+      ]
+    },
+    "string-double": {
+      "name": "string.quoted.double.clpp",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "include": "#escapes"
+        }
+      ]
+    },
+    "escapes": {
+      "patterns": [
+        {
+          "name": "constant.character.escape.clpp",
+          "match": "\\\\[ntr0\\\\\"'$]"
+        },
+        {
+          "name": "invalid.illegal.escape.clpp",
+          "match": "\\\\."
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "include": "#string-double"
+        },
+        {
+          "name": "string.quoted.single.clpp",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            {
+              "include": "#escapes"
+            }
+          ]
+        },
+        {
+          "name": "string.template.clpp",
+          "begin": "`",
+          "end": "`",
+          "patterns": [
+            {
+              "include": "#escapes"
+            },
+            {
+              "name": "meta.template.expression.clpp",
+              "begin": "\\$\\{",
+              "end": "\\}",
+              "beginCaptures": {
+                "0": {
+                  "name": "punctuation.definition.template-expression.begin.clpp"
+                }
+              },
+              "endCaptures": {
+                "0": {
+                  "name": "punctuation.definition.template-expression.end.clpp"
+                }
+              },
+              "patterns": [
+                {
+                  "include": "$self"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.hex.clpp",
+          "match": "\\b0[xX][0-9A-Fa-f_]+\\b"
+        },
+        {
+          "name": "constant.numeric.binary.clpp",
+          "match": "\\b0[bB][01_]+\\b"
+        },
+        {
+          "name": "constant.numeric.float.clpp",
+          "match": "\\b\\d[\\d_]*\\.\\d[\\d_]*(?:[eE][+-]?\\d+)?\\b"
+        },
+        {
+          "name": "constant.numeric.float.clpp",
+          "match": "\\b\\d[\\d_]*[eE][+-]?\\d+\\b"
+        },
+        {
+          "name": "constant.numeric.integer.clpp",
+          "match": "\\b\\d[\\d_]*\\b"
+        }
+      ]
+    },
+    "declarations": {
+      "patterns": [
+        {
+          "match": "\\b(def)\\s+([A-Za-z_]\\w*)",
+          "captures": {
+            "1": {
+              "name": "storage.type.def.clpp"
+            },
+            "2": {
+              "name": "entity.name.type.clpp"
+            }
+          }
+        },
+        {
+          "match": "\\b(enum)\\s+(class)\\s+([A-Za-z_]\\w*)",
+          "captures": {
+            "1": {
+              "name": "storage.type.enum.clpp"
+            },
+            "2": {
+              "name": "storage.type.enum.clpp"
+            },
+            "3": {
+              "name": "entity.name.type.enum.clpp"
+            }
+          }
+        },
+        {
+          "match": "\\b(link)\\b",
+          "name": "keyword.control.import.clpp"
+        },
+        {
+          "comment": "Type Name( : function or method declaration",
+          "match": "^\\s*(?:(export|public|private)\\s+)?([A-Za-z_][\\w.]*(?:<[\\w.,\\s<>]*>)?)\\s+([A-Za-z_]\\w*)\\s*(?=\\()",
+          "captures": {
+            "1": {
+              "name": "storage.modifier.clpp"
+            },
+            "2": {
+              "patterns": [
+                {
+                  "include": "#types"
+                },
+                {
+                  "match": "[A-Za-z_][\\w.]*",
+                  "name": "entity.name.type.clpp"
+                }
+              ]
+            },
+            "3": {
+              "name": "entity.name.function.clpp"
+            }
+          }
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.clpp",
+          "match": "\\b(if|else|while|do|for|in|guard|try|catch|break|continue|return|match|switch|case|default)\\b"
+        },
+        {
+          "name": "storage.modifier.clpp",
+          "match": "\\b(export|const|public|private|static|extern|final|override|abstract|constexpr)\\b"
+        },
+        {
+          "name": "keyword.other.clpp",
+          "match": "\\b(as|class|func|template|typename|typeof|static_cast|async|await|spawn|parallel|signal|pragma|operator)\\b"
+        },
+        {
+          "name": "keyword.operator.word.clpp",
+          "match": "\\b(and|or|not|shl|shr)\\b"
+        }
+      ]
+    },
+    "types": {
+      "patterns": [
+        {
+          "name": "storage.type.primitive.clpp",
+          "match": "\\b(auto|number|float|string|bool|void|i8|i16|i32|i64|u8|u16|u32|u64|f32|f64)\\b"
+        },
+        {
+          "name": "support.type.clpp",
+          "match": "\\b(array|dictionary|optional|buffer|Vector2|Vector3|Vector4)\\b"
+        }
+      ]
+    },
+    "constants": {
+      "name": "constant.language.clpp",
+      "match": "\\b(true|false|null)\\b"
+    },
+    "this": {
+      "patterns": [
+        {
+          "name": "variable.language.this.clpp",
+          "match": "@this\\b"
+        },
+        {
+          "match": "(@)([A-Za-z_]\\w*)",
+          "captures": {
+            "1": {
+              "name": "variable.language.this.clpp"
+            },
+            "2": {
+              "name": "variable.other.member.clpp"
+            }
+          }
+        }
+      ]
+    },
+    "enum-access": {
+      "match": "\\b([A-Za-z_]\\w*)(::)([A-Za-z_]\\w*)",
+      "captures": {
+        "1": {
+          "name": "entity.name.type.enum.clpp"
+        },
+        "2": {
+          "name": "punctuation.separator.scope.clpp"
+        },
+        "3": {
+          "name": "variable.other.enummember.clpp"
+        }
+      }
+    },
+    "calls": {
+      "patterns": [
+        {
+          "name": "support.function.builtin.clpp",
+          "match": "\\b(post|warn|report|len|push|pop|insert|remove|find|sort|args|pcall)\\b(?=\\s*\\()"
+        },
+        {
+          "name": "entity.name.function.call.clpp",
+          "match": "\\b[A-Za-z_]\\w*\\b(?=\\s*\\()"
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.concatenation.clpp",
+          "match": "\\.:"
+        },
+        {
+          "name": "keyword.operator.range.clpp",
+          "match": "\\.\\."
+        },
+        {
+          "name": "keyword.operator.arrow.clpp",
+          "match": "->|=>|~>"
+        },
+        {
+          "name": "keyword.operator.comparison.clpp",
+          "match": "==|!=|<=|>="
+        },
+        {
+          "name": "keyword.operator.assignment.compound.clpp",
+          "match": "\\+=|-=|\\*=|/=|%="
+        },
+        {
+          "name": "keyword.operator.increment.clpp",
+          "match": "\\+\\+|--"
+        },
+        {
+          "name": "keyword.operator.arithmetic.clpp",
+          "match": "[+\\-*/%]"
+        },
+        {
+          "name": "keyword.operator.assignment.clpp",
+          "match": "="
+        },
+        {
+          "name": "keyword.operator.logical.clpp",
+          "match": "!"
+        },
+        {
+          "name": "keyword.operator.ternary.clpp",
+          "match": "\\?|:"
+        }
+      ]
+    },
+    "doc-tags": {
+      "match": "(!)(name|desc|params|return|example|deprecated|see)\\b",
+      "captures": {
+        "1": {
+          "name": "punctuation.definition.tag.clpp"
+        },
+        "2": {
+          "name": "storage.type.class.doc.clpp"
+        }
+      }
+    },
+    "annotations": {
+      "match": "\\b(TODO|FIXME|HACK|NOTE|XXX|BUG)\\b(?:\\(([^)]*)\\))?:?",
+      "captures": {
+        "1": {
+          "name": "keyword.other.todo.clpp"
+        },
+        "2": {
+          "name": "entity.name.tag.todo-owner.clpp"
+        }
+      }
+    }
+  }
+}

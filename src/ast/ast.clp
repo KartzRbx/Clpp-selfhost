@@ -2,6 +2,10 @@ export enum class NodeKind {
     Module,
     LinkDeclaration,
     TypeDeclaration,
+    DefDeclaration,
+    FieldDeclaration,
+    EnumDeclaration,
+    EnumMember,
     TypeReference,
     TypeIntersection,
     ObjectType,
@@ -23,7 +27,25 @@ export enum class NodeKind {
     ArrayLiteral,
     DictionaryLiteral,
     TypedCollectionExpression,
-    ConditionalExpression
+    TypedExpression,
+    ConditionalExpression,
+    ThisExpression,
+    ScopeExpression,
+    ObjectConstruction,
+    FieldInitializer,
+    IfStatement,
+    WhileStatement,
+    DoWhileStatement,
+    ForInStatement,
+    GuardStatement,
+    TryStatement,
+    BreakStatement,
+    ContinueStatement
+}
+
+export def DocTag {
+    string Name;
+    string Value;
 }
 
 export def Node {
@@ -33,9 +55,12 @@ export def Node {
     string Value;
     bool IsExported;
     bool IsAuto;
+    bool IsConst;
     number StartToken;
     number EndToken;
     array<Node> Children;
+    << Tags from a `<<{ !tag = "..." }>>` doc comment written above the declaration.
+    array<DocTag> Docs;
 }
 
 export def NamingRule {

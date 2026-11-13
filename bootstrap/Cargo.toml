@@ -1,0 +1,23 @@
+[package]
+name = "clpp-bootstrap"
+version = "0.1.0"
+edition = "2021"
+description = "Stage-0 bootstrap for the self-hosted CL++ compiler"
+
+# Reference lexer and header parser (kept for their unit tests).
+[lib]
+name = "clpp_reference"
+path = "lexer.rs"
+
+# Stage-0 interpreter that runs .clp files directly.
+[[bin]]
+name = "clpp-boot"
+path = "runtime/main.rs"
+
+# Register virtual machine for compiled CL++ bytecode (.clpb).
+[[bin]]
+name = "clpp-vm"
+path = "runtime/vm_main.rs"
+
+[profile.release]
+opt-level = 3

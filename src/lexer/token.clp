@@ -38,6 +38,8 @@ export enum class TokenKind {
     Semicolon,
     Colon,
     AtSign,
+    DocCommentStart,
+    DocCommentEnd,
     EndOfFile
 }
 

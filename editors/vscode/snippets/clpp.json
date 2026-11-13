@@ -1,0 +1,174 @@
+{
+  "Module header": {
+    "prefix": "!as",
+    "body": [
+      "!as ${1:${TM_FILENAME_BASE/(.*)/${1:/pascalcase}/}}",
+      "",
+      "$0"
+    ],
+    "description": "Optional module name directive"
+  },
+  "Link": {
+    "prefix": "link",
+    "body": [
+      "link \"${1:./file.clp}\" as ${2:Alias}"
+    ],
+    "description": "Import another .clp file"
+  },
+  "Function": {
+    "prefix": "fn",
+    "body": [
+      "${1:void} ${2:Name}(${3}) {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Function declaration"
+  },
+  "Exported function": {
+    "prefix": "efn",
+    "body": [
+      "export ${1:void} ${2:Name}(${3}) {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Exported function declaration"
+  },
+  "Def": {
+    "prefix": "def",
+    "body": [
+      "def ${1:Name} {",
+      "\t${2:number} ${3:Field}",
+      "",
+      "\t${4:void} ${5:Method}() {",
+      "\t\t$0",
+      "\t}",
+      "}"
+    ],
+    "description": "Data type with fields and methods"
+  },
+  "Enum class": {
+    "prefix": "enum",
+    "body": [
+      "enum class ${1:Name} {",
+      "\t${2:First},",
+      "\t${3:Second}",
+      "}"
+    ],
+    "description": "Scoped enum"
+  },
+  "If": {
+    "prefix": "if",
+    "body": [
+      "if (${1:condition}) {",
+      "\t$0",
+      "}"
+    ]
+  },
+  "If else": {
+    "prefix": "ife",
+    "body": [
+      "if (${1:condition}) {",
+      "\t$2",
+      "} else {",
+      "\t$0",
+      "}"
+    ]
+  },
+  "While": {
+    "prefix": "while",
+    "body": [
+      "while (${1:condition}) {",
+      "\t$0",
+      "}"
+    ]
+  },
+  "Counting loop": {
+    "prefix": "loop",
+    "body": [
+      "number ${1:index} = 0",
+      "while (${1:index} < ${2:count}) {",
+      "\t$0",
+      "\t${1:index} += 1",
+      "}"
+    ],
+    "description": "while loop with a counter"
+  },
+  "For in": {
+    "prefix": "for",
+    "body": [
+      "for (${1:auto} ${2:item} in ${3:items}) {",
+      "\t$0",
+      "}"
+    ]
+  },
+  "Do while": {
+    "prefix": "do",
+    "body": [
+      "do {",
+      "\t$0",
+      "} while (${1:condition})"
+    ]
+  },
+  "Guard": {
+    "prefix": "guard",
+    "body": [
+      "guard (${1:condition}) else {",
+      "\t${0:return}",
+      "}"
+    ]
+  },
+  "Try catch": {
+    "prefix": "try",
+    "body": [
+      "try {",
+      "\t$1",
+      "} catch (${2:error}) {",
+      "\t$0",
+      "}"
+    ]
+  },
+  "Doc comment": {
+    "prefix": "doc",
+    "body": [
+      "<<{",
+      "\t!desc = \"${1:What it does}\"",
+      "\t!params = \"${2:name: type}\"",
+      "\t!return = \"${3:type}\"",
+      "}>>"
+    ],
+    "description": "Documentation for the next declaration"
+  },
+  "Post": {
+    "prefix": "post",
+    "body": [
+      "post(${1:value})"
+    ]
+  },
+  "Test function": {
+    "prefix": "test",
+    "body": [
+      "void Test${1:Name}() {",
+      "\tif (${2:condition}) {",
+      "\t\treport(\"${3:message}\")",
+      "\t}",
+      "}",
+      "",
+      "Test${1:Name}()"
+    ],
+    "description": "Test function that reports on failure"
+  },
+  "TODO": {
+    "prefix": "todo",
+    "body": [
+      "<< TODO: ${1:what is left to do}"
+    ],
+    "description": "Annotation listed in the Problems panel"
+  },
+  "FIXME": {
+    "prefix": "fixme",
+    "body": [
+      "<< FIXME: ${1:what is wrong}"
+    ],
+    "description": "Annotation listed in the Problems panel"
+  }
+}

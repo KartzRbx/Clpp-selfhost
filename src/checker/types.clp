@@ -5,7 +5,7 @@ export def TypeDeclarationChecker {
         number index = 0;
         while (index < endIndex) {
             if (
-                declarations[index].Kind == Ast.NodeKind::TypeDeclaration
+                @IsTypeDeclaration(declarations[index])
                 and declarations[index].Name == name
             ) {
                 return true;
@@ -13,6 +13,12 @@ export def TypeDeclarationChecker {
             index += 1;
         }
         return false;
+    }
+
+    bool IsTypeDeclaration(Ast.Node node) {
+        return node.Kind == Ast.NodeKind::TypeDeclaration
+            or node.Kind == Ast.NodeKind::DefDeclaration
+            or node.Kind == Ast.NodeKind::EnumDeclaration
     }
 
     array<string> CheckNode(Ast.Node node, array<string> errors) {
@@ -48,7 +54,7 @@ export array<string> CheckTypeDeclarations(Ast.Module module) {
 
     while (index < len(module.Declarations)) {
         Ast.Node declaration = module.Declarations[index];
-        if (declaration.Kind == Ast.NodeKind::TypeDeclaration) {
+        if (checker.IsTypeDeclaration(declaration)) {
             if (checker.ContainsName(module.Declarations, declaration.Name, index)) {
                 push(errors, "duplicate type declaration '" .: declaration.Name .: "'");
             }

@@ -1,4 +1,3 @@
-
 link "../../src/lexer/lexer.clp" as Lexing;
 link "../../src/lexer/token.clp" as Tokens;
 
@@ -444,6 +443,23 @@ void TestCRLFPositions() {
     }
 }
 
+void TestDocCommentTokens() {
+    string source = "<<{ !desc = \"x\" }>>\n<< plain\nnumber a"
+    array<Tokens.Token> tokens = Lexing.Lex(source)
+
+    if (len(tokens) != 9) {
+        report("doc comment token count mismatch: " .: len(tokens))
+        return
+    }
+
+    ExpectToken(source, tokens, 0, Tokens.TokenKind::DocCommentStart, "<<{")
+    ExpectToken(source, tokens, 1, Tokens.TokenKind::LogicalOperator, "!")
+    ExpectToken(source, tokens, 2, Tokens.TokenKind::Identifier, "desc")
+    ExpectToken(source, tokens, 4, Tokens.TokenKind::StringLiteral, "\"x\"")
+    ExpectToken(source, tokens, 5, Tokens.TokenKind::DocCommentEnd, "}>>")
+    ExpectToken(source, tokens, 6, Tokens.TokenKind::Keyword, "number")
+}
+
 TestDeclarationsAndLiteralKinds();
 TestAutoContainerDeclarationAndTypedAssignmentTokens();
 TestTypedCollectionSyntaxTokens();
@@ -462,4 +478,5 @@ TestEscapedQuotedStrings();
 TestMalformedInputReportsErrors();
 TestUnicodeSourceOffsets();
 TestCRLFPositions();
+TestDocCommentTokens()
 post("lexer core tests passed");

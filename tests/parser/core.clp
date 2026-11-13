@@ -273,9 +273,304 @@ void TestDictionaryEntryKeys() {
     }
 }
 
+void TestControlFlowStatements() {
+    string source =
+        "!as ControlFlow\n"
+        .: "void Run(array<number> values) {\n"
+        .: "    number index = 0\n"
+        .: "    if (index == 0) {\n"
+        .: "        index = 1\n"
+        .: "    } else if (index == 1) {\n"
+        .: "        index = 2\n"
+        .: "    } else {\n"
+        .: "        index = 3\n"
+        .: "    }\n"
+        .: "    while (index < 10) {\n"
+        .: "        if (index == 5) {\n"
+        .: "            break\n"
+        .: "        }\n"
+        .: "        index += 1\n"
+        .: "        continue\n"
+        .: "    }\n"
+        .: "    do {\n"
+        .: "        index -= 1\n"
+        .: "    } while (index > 0)\n"
+        .: "    for (number value in values) {\n"
+        .: "        post(value)\n"
+        .: "    }\n"
+        .: "    guard (len(values) > 0) else {\n"
+        .: "        return\n"
+        .: "    }\n"
+        .: "    try {\n"
+        .: "        report(\"falhou\")\n"
+        .: "    } catch (error) {\n"
+        .: "        warn(error)\n"
+        .: "    }\n"
+        .: "}\n"
+    Ast.Module module = ParseSource(source)
+
+    if (len(module.Declarations) != 1) {
+        report("control flow function declaration count mismatch")
+        return
+    }
+    Ast.Node body = module.Declarations[0].Children[1]
+    if (len(body.Children) != 7) {
+        report("control flow statement count mismatch")
+        return
+    }
+
+    Ast.Node ifStatement = body.Children[1]
+    ExpectNodeKind(ifStatement, Ast.NodeKind::IfStatement, "if statement was not parsed")
+    if (
+        len(ifStatement.Children) != 3
+        or ifStatement.Children[0].Kind != Ast.NodeKind::BinaryExpression
+        or ifStatement.Children[2].Kind != Ast.NodeKind::IfStatement
+        or len(ifStatement.Children[2].Children) != 3
+        or ifStatement.Children[2].Children[2].Kind != Ast.NodeKind::Block
+    ) {
+        report("else if / else chain was not parsed")
+    }
+
+    Ast.Node whileStatement = body.Children[2]
+    ExpectNodeKind(whileStatement, Ast.NodeKind::WhileStatement, "while statement was not parsed")
+    Ast.Node whileBody = whileStatement.Children[1]
+    if (
+        len(whileBody.Children) != 3
+        or whileBody.Children[0].Children[1].Children[0].Kind != Ast.NodeKind::BreakStatement
+        or whileBody.Children[1].Children[0].Kind != Ast.NodeKind::Assignment
+        or whileBody.Children[1].Children[0].Name != "+="
+        or whileBody.Children[2].Kind != Ast.NodeKind::ContinueStatement
+    ) {
+        report("break without semicolon must not swallow the next line as a declaration")
+    }
+
+    Ast.Node doWhile = body.Children[3]
+    ExpectNodeKind(doWhile, Ast.NodeKind::DoWhileStatement, "do-while statement was not parsed")
+    if (
+        doWhile.Children[0].Kind != Ast.NodeKind::Block
+        or doWhile.Children[1].Kind != Ast.NodeKind::BinaryExpression
+    ) {
+        report("do-while children must be body then condition")
+    }
+
+    Ast.Node forStatement = body.Children[4]
+    ExpectNodeKind(forStatement, Ast.NodeKind::ForInStatement, "for-in statement was not parsed")
+    if (
+        forStatement.Children[0].Kind != Ast.NodeKind::VariableDeclaration
+        or forStatement.Children[0].Name != "value"
+        or forStatement.Children[0].TypeName != "number"
+        or forStatement.Children[1].Name != "values"
+    ) {
+        report("for-in loop variable or iterable was not parsed")
+    }
+
+    Ast.Node guardStatement = body.Children[5]
+    ExpectNodeKind(guardStatement, Ast.NodeKind::GuardStatement, "guard statement was not parsed")
+    if (guardStatement.Children[1].Children[0].Kind != Ast.NodeKind::ReturnStatement) {
+        report("guard else block was not parsed")
+    }
+
+    Ast.Node tryStatement = body.Children[6]
+    ExpectNodeKind(tryStatement, Ast.NodeKind::TryStatement, "try statement was not parsed")
+    if (
+        tryStatement.Name != "error"
+        or len(tryStatement.Children) != 3
+        or tryStatement.Children[2].Kind != Ast.NodeKind::VariableDeclaration
+    ) {
+        report("catch binding was not parsed")
+    }
+}
+
+void TestSelfHostingExpressions() {
+    string source =
+        "!as Expressions\n"
+        .: "const number LIMIT = 3\n"
+        .: "Ast.Node node = Ast.Node {\n"
+        .: "    Kind = Ast.NodeKind::Module,\n"
+        .: "    Name = \"raiz\"\n"
+        .: "    IsAuto = false\n"
+        .: "}\n"
+        .: "auto vazio = Checker {}\n"
+        .: "auto kind = isDictionary ? Ast.NodeKind::DictionaryLiteral : Ast.NodeKind::ArrayLiteral\n"
+        .: "@this.Current += 1\n"
+        .: "auto ativo = not @this.IsAtEnd() and count < LIMIT\n"
+    Ast.Module module = ParseSource(source)
+
+    if (len(module.Declarations) != 6) {
+        report("self-hosting expression declaration count mismatch")
+        return
+    }
+
+    Ast.Node limit = module.Declarations[0]
+    if (not limit.IsConst or limit.TypeName != "number" or len(limit.Children) != 1) {
+        report("const declaration was not parsed")
+    }
+
+    Ast.Node node = module.Declarations[1]
+    if (node.Kind != Ast.NodeKind::VariableDeclaration or node.TypeName != "Ast.Node") {
+        report("qualified type declaration was not parsed")
+    }
+    Ast.Node construction = node.Children[0]
+    ExpectNodeKind(construction, Ast.NodeKind::ObjectConstruction, "object construction was not parsed")
+    if (
+        len(construction.Children) != 4
+        or construction.Children[0].Kind != Ast.NodeKind::MemberExpression
+        or construction.Children[1].Kind != Ast.NodeKind::FieldInitializer
+        or construction.Children[1].Name != "Kind"
+        or construction.Children[1].Children[0].Kind != Ast.NodeKind::ScopeExpression
+        or construction.Children[1].Children[0].Name != "Module"
+        or construction.Children[3].Name != "IsAuto"
+    ) {
+        report("object fields separated by commas or line breaks were not parsed")
+    }
+
+    Ast.Node empty = module.Declarations[2].Children[0]
+    if (empty.Kind != Ast.NodeKind::ObjectConstruction or len(empty.Children) != 1) {
+        report("empty object construction was not parsed")
+    }
+
+    Ast.Node conditional = module.Declarations[3].Children[0]
+    if (
+        conditional.Kind != Ast.NodeKind::ConditionalExpression
+        or len(conditional.Children) != 3
+        or conditional.Children[1].Name != "DictionaryLiteral"
+        or conditional.Children[2].Name != "ArrayLiteral"
+    ) {
+        report("conditional expression was not parsed")
+    }
+
+    Ast.Node increment = module.Declarations[4].Children[0]
+    if (
+        increment.Kind != Ast.NodeKind::Assignment
+        or increment.Name != "+="
+        or increment.Children[0].Children[0].Kind != Ast.NodeKind::ThisExpression
+    ) {
+        report("compound assignment on @this was not parsed")
+    }
+
+    Ast.Node logical = module.Declarations[5].Children[0]
+    if (
+        logical.Kind != Ast.NodeKind::BinaryExpression
+        or logical.Name != "and"
+        or logical.Children[0].Kind != Ast.NodeKind::UnaryExpression
+        or logical.Children[1].Name != "<"
+    ) {
+        report("prefix 'not' must bind tighter than 'and' and comparisons")
+    }
+}
+
+void TestAtMemberShorthand() {
+    Ast.Module module = ParseSource("!as Shorthand\n@Current += 1\n@Advance()\nauto self = @this\n")
+
+    if (len(module.Declarations) != 3) {
+        report("@ shorthand declaration count mismatch")
+        return
+    }
+
+    Ast.Node increment = module.Declarations[0].Children[0]
+    Ast.Node target = increment.Children[0]
+    if (
+        increment.Kind != Ast.NodeKind::Assignment
+        or target.Kind != Ast.NodeKind::MemberExpression
+        or target.Name != "Current"
+        or target.Children[0].Kind != Ast.NodeKind::ThisExpression
+    ) {
+        report("@Current must parse as @this.Current")
+    }
+
+    Ast.Node call = module.Declarations[1].Children[0]
+    if (
+        call.Kind != Ast.NodeKind::CallExpression
+        or call.Children[0].Kind != Ast.NodeKind::MemberExpression
+        or call.Children[0].Name != "Advance"
+    ) {
+        report("@Advance() must parse as a call to @this.Advance")
+    }
+
+    if (module.Declarations[2].Children[0].Kind != Ast.NodeKind::ThisExpression) {
+        report("plain @this must still parse")
+    }
+}
+
+void TestDocComments() {
+    string source =
+        "!as Docs\n"
+        .: "<<{\n"
+        .: "    !name = \"Distance\"\n"
+        .: "    !desc = \"Distance between two points\"\n"
+        .: "    !params = \"a: number, b: number\"\n"
+        .: "    !return = \"number\"\n"
+        .: "}>>\n"
+        .: "export number Distance(number a, number b) {\n"
+        .: "    return b - a\n"
+        .: "}\n"
+        .: "<<{ !desc = \"Maximum speed\" }>>\n"
+        .: "const number MAX_SPEED = 10\n"
+    Ast.Module module = ParseSource(source)
+
+    if (len(module.Declarations) != 2) {
+        report("documented declaration count mismatch")
+        return
+    }
+
+    Ast.Node distance = module.Declarations[0]
+    if (
+        distance.Kind != Ast.NodeKind::FunctionDeclaration
+        or len(distance.Docs) != 4
+        or distance.Docs[0].Name != "name"
+        or distance.Docs[0].Value != "Distance"
+        or distance.Docs[1].Value != "Distance between two points"
+        or distance.Docs[3].Name != "return"
+    ) {
+        report("function doc comment tags were not attached")
+    }
+
+    Ast.Node speed = module.Declarations[1]
+    if (len(speed.Docs) != 1 or speed.Docs[0].Value != "Maximum speed") {
+        report("variable doc comment was not attached")
+    }
+}
+
+bool ParseFails(string source) {
+    try {
+        ParseSource(source)
+    } catch (error) {
+        return true
+    }
+    return false
+}
+
+void TestInvalidDocComments() {
+    if (not ParseFails("!as Bad\n<<{ !name = \"Other\" }>>\nnumber Real() {\n    return 1\n}\n")) {
+        report("a !name that differs from the declaration must be rejected")
+    }
+    if (not ParseFails("!as Bad\n<<{ !author = \"me\" }>>\nnumber x = 1\n")) {
+        report("unknown doc tags must be rejected")
+    }
+    if (not ParseFails("!as Bad\n<<{ !desc = \"a\"\n !desc = \"b\" }>>\nnumber x = 1\n")) {
+        report("duplicate doc tags must be rejected")
+    }
+    if (not ParseFails("!as Bad\n<<{ !desc = \"orphan\" }>>\npost(1)\n")) {
+        report("a doc comment above a statement must be rejected")
+    }
+}
+
+void TestModuleHeaderIsOptional() {
+    Ast.Module module = ParseSource("number count = 1\npost(count)\n")
+    if (module.Name != "" or len(module.Declarations) != 2) {
+        report("a file without !as must parse with an empty module name")
+    }
+}
+
 TestModuleHeaderWithoutSemicolon();
 TestOptionalStatementTerminators();
 TestStructuralTypeDeclarations();
 TestTypedCollectionInitializers();
 TestDictionaryEntryKeys();
+TestControlFlowStatements()
+TestSelfHostingExpressions()
+TestAtMemberShorthand()
+TestDocComments()
+TestModuleHeaderIsOptional()
+TestInvalidDocComments()
 post("parser core tests passed");

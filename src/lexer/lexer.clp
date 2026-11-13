@@ -15,6 +15,7 @@ const array<string> LETTERS = array<string>(
     "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z",
     "_"
 );
+
 const array<string> KEYWORDS = array<string>(
     "Vector2", "Vector3", "Vector4", "abstract", "and", "as", "async",
     "atomic", "auto", "await", "bool", "break", "buffer", "case", "catch",
@@ -41,6 +42,8 @@ def TemplateFrame {
 }
 
 const array<SymbolRule> SYMBOL_RULES = array<SymbolRule>(
+    SymbolRule { Text = "<<{", Kind = TokenModule.TokenKind::DocCommentStart },
+    SymbolRule { Text = "}>>", Kind = TokenModule.TokenKind::DocCommentEnd },
     SymbolRule { Text = "...", Kind = TokenModule.TokenKind::Ellipsis },
     SymbolRule { Text = "::", Kind = TokenModule.TokenKind::ScopeResolutionOperator },
     SymbolRule { Text = ".:", Kind = TokenModule.TokenKind::ConcatenationOperator },
@@ -162,6 +165,9 @@ export def Lexer {
 
             if (character == " " or character == "\t" or character == "\n" or character == "\r") {
                 @this.Advance();
+            } else if (@this.Match("<<{")) {
+                << Doc comments are real tokens: the parser attaches them to declarations.
+                return;
             } else if (@this.Match("<<[")) {
                 number commentLine = @this.Line;
                 number commentColumn = @this.Column;
@@ -395,6 +401,8 @@ export def Lexer {
                 character = @this.Source[@this.Position];
                 if (
                     character != "n"
+                    and character != "r"
+                    and character != "0"
                     and character != "t"
                     and character != "\\"
                     and character != "\""
