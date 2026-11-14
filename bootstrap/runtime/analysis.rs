@@ -245,6 +245,56 @@ pub fn analyze(path: &Path, text: &str, loader: Loader) -> Analysis {
     analysis
 }
 
+/// A member of a def, looking through its base defs (`def Mage:Entity`).
+pub fn member_in_chain<'a>(def: &'a Sym, index: &'a FileIndex, linked: &'a HashMap<String, FileIndex>, name: &str) -> Option<&'a Sym> {
+    let mut current = def;
+    let mut ctx = index;
+    for _ in 0..16 {
+        if let Some(m) = current.children.iter().find(|c| c.name == name) {
+            return Some(m);
+        }
+        let (next, base) = base_of(current, ctx, linked)?;
+        current = base;
+        ctx = next;
+    }
+    None
+}
+
+/// The base def of `def`, with the file that declares it.
+pub fn base_of<'a>(def: &Sym, ctx: &'a FileIndex, linked: &'a HashMap<String, FileIndex>) -> Option<(&'a FileIndex, &'a Sym)> {
+    let base = def.ty.as_deref()?;
+    let (next, name) = match base.split_once('.') {
+        Some((alias, n)) => {
+            let link = ctx.links.iter().find(|l| l.alias == alias)?;
+            (linked.values().find(|l| l.path == link.target)?, n)
+        }
+        None => (ctx, base),
+    };
+    next.find(name).filter(|s| s.kind == SymKind::Def).map(|s| (next, s))
+}
+
+/// Every member of a def including inherited ones, own members first.
+pub fn all_members<'a>(def: &'a Sym, index: &'a FileIndex, linked: &'a HashMap<String, FileIndex>) -> Vec<&'a Sym> {
+    let mut out: Vec<&Sym> = Vec::new();
+    let mut current = def;
+    let mut ctx = index;
+    for _ in 0..16 {
+        for c in &current.children {
+            if !out.iter().any(|o| o.name == c.name) {
+                out.push(c);
+            }
+        }
+        match base_of(current, ctx, linked) {
+            Some((next, base)) => {
+                current = base;
+                ctx = next;
+            }
+            None => break,
+        }
+    }
+    out
+}
+
 /// `<< TODO: ...` style notes inside comments, listed as information.
 pub fn annotations(text: &str) -> Vec<Diag> {
     const MARKERS: &[&str] = &["TODO", "FIXME", "BUG", "HACK", "XXX"];
@@ -457,7 +507,7 @@ pub fn build_index(path: &Path, program: &Program, text: &str) -> FileIndex {
                 symbols.push(function_sym(decl, None, text, path, *exported, SymKind::Function));
             }
             Item::Def { decl, exported } => {
-                let mut sym = leaf(decl.pos, &decl.name, SymKind::Def, String::new(), *exported, None);
+                let mut sym = leaf(decl.pos, &decl.name, SymKind::Def, String::new(), *exported, decl.base.as_ref().map(TypeName::render));
                 sym.end_line = decl.end_line;
                 sym.params = decl.type_params.clone();
                 let generic = if decl.type_params.is_empty() { String::new() } else { format!("<{}>", decl.type_params.join(", ")) };
@@ -823,11 +873,12 @@ impl<'a> Checker<'a> {
                 self.error(line, name, "'@' members can only be used inside a def method".into());
                 None
             }
-            Some(def) => match def.children.iter().find(|c| c.name == name) {
+            Some(def) => match member_in_chain(def, self.index, &self.a.linked, name) {
                 Some(m) => Some(m),
                 None => {
                     let msg = format!("def {} has no member '{}'", def.name, name);
-                    let help = crate::diag::closest(name, def.children.iter().map(|c| c.name.as_str()))
+                    let members = all_members(def, self.index, &self.a.linked);
+                    let help = crate::diag::closest(name, members.iter().map(|c| c.name.as_str()))
                         .map(|c| format!("did you mean '@{}'?", c))
                         .or_else(|| Some(format!("declare it in def {}, for example: number {}", def.name, name)));
                     self.error_help(line, name, msg, help);
@@ -949,7 +1000,7 @@ impl<'a> Checker<'a> {
                 match self.def_of(type_path) {
                     Some(def) => {
                         for (name, _) in fields {
-                            if !def.children.iter().any(|c| c.kind == SymKind::Field && &c.name == name) {
+                            if !all_members(def, self.index, &self.a.linked).iter().any(|c| c.kind == SymKind::Field && &c.name == name) {
                                 let msg = format!("def {} has no field '{}'", def.name, name);
                                 self.error(e.line, name, msg);
                             }

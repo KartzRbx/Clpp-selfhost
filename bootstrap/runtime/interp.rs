@@ -59,10 +59,28 @@ impl Str {
 }
 
 pub struct DefInfo {
+    /// Fields include the inherited ones, base fields first.
     decl: Rc<DefDecl>,
     module: Rc<Module>,
     field_index: HashMap<String, usize>,
-    methods: HashMap<String, Rc<FnDecl>>,
+    /// Methods with the module they were written in (inherited ones keep theirs).
+    methods: HashMap<String, (Rc<FnDecl>, Rc<Module>)>,
+    /// Module of each field, for evaluating its default value.
+    field_modules: Vec<Rc<Module>>,
+    base: Option<Rc<DefInfo>>,
+}
+
+impl DefInfo {
+    fn is_a(self: &Rc<Self>, other: &Rc<DefInfo>) -> bool {
+        let mut current = Some(self.clone());
+        while let Some(d) = current {
+            if Rc::ptr_eq(&d, other) {
+                return true;
+            }
+            current = d.base.clone();
+        }
+        false
+    }
 }
 
 pub struct EnumInfo {
@@ -433,9 +451,10 @@ impl Interp {
                     }
                     let mut methods = HashMap::new();
                     for m in &decl.methods {
-                        methods.insert(m.name.clone(), m.clone());
+                        methods.insert(m.name.clone(), (m.clone(), module.clone()));
                     }
-                    let info = Rc::new(DefInfo { decl: decl.clone(), module: module.clone(), field_index, methods });
+                    let field_modules = vec![module.clone(); decl.fields.len()];
+                    let info = Rc::new(DefInfo { decl: decl.clone(), module: module.clone(), field_index, methods, field_modules, base: None });
                     (decl.name.clone(), Value::Type(info), *exported)
                 }
                 Item::Enum { decl, exported } => {
@@ -451,6 +470,74 @@ impl Interp {
             if exported {
                 module.exports.borrow_mut().insert(name);
             }
+        }
+
+        // Inheritance: `def Mage:Entity` copies the base fields and methods
+        // (own members override). Repeat so chains resolve in any order.
+        let mut pending: Vec<Rc<DefDecl>> = program
+            .items
+            .iter()
+            .filter_map(|i| match i {
+                Item::Def { decl, .. } if decl.base.is_some() => Some(decl.clone()),
+                _ => None,
+            })
+            .collect();
+        let mut rounds = 0;
+        while !pending.is_empty() {
+            rounds += 1;
+            if rounds > 64 {
+                return fail(format!("{}: def inheritance does not resolve (a def inherits from itself?)", file));
+            }
+            let mut still = Vec::new();
+            for decl in pending {
+                let base_type = decl.base.as_ref().unwrap();
+                let base_value = match base_type.base.split_once('.') {
+                    Some((alias, name)) => match module.globals.borrow().get(alias) {
+                        Some(Value::Module(m)) => m.globals.borrow().get(name).cloned(),
+                        _ => None,
+                    },
+                    None => module.globals.borrow().get(&base_type.base).cloned(),
+                };
+                let base = match base_value {
+                    Some(Value::Type(b)) => b,
+                    Some(_) => return fail(format!("{}: '{}' is not a def, so {} cannot inherit from it", file, base_type.base, decl.name)),
+                    None => return fail(format!("{}: base def '{}' of {} not found", file, base_type.base, decl.name)),
+                };
+                // Wait for a base that inherits from a def not merged yet.
+                if base.decl.base.is_some() && base.base.is_none() {
+                    still.push(decl);
+                    continue;
+                }
+                let mut fields: Vec<FieldDecl> = Vec::new();
+                let mut field_modules = Vec::new();
+                for (f, m) in base.decl.fields.iter().zip(&base.field_modules) {
+                    if !decl.fields.iter().any(|own| own.name == f.name) {
+                        fields.push(f.clone());
+                        field_modules.push(m.clone());
+                    }
+                }
+                for f in &decl.fields {
+                    fields.push(f.clone());
+                    field_modules.push(module.clone());
+                }
+                let mut methods = base.methods.clone();
+                for m in &decl.methods {
+                    methods.insert(m.name.clone(), (m.clone(), module.clone()));
+                }
+                let field_index = fields.iter().enumerate().map(|(i, f)| (f.name.clone(), i)).collect();
+                let merged = Rc::new(DefDecl {
+                    name: decl.name.clone(),
+                    base: decl.base.clone(),
+                    type_params: decl.type_params.clone(),
+                    pos: decl.pos,
+                    end_line: decl.end_line,
+                    fields,
+                    methods: decl.methods.clone(),
+                });
+                let info = Rc::new(DefInfo { decl: merged, module: module.clone(), field_index, methods, field_modules, base: Some(base) });
+                module.globals.borrow_mut().insert(decl.name.clone(), Value::Type(info));
+            }
+            pending = still;
         }
 
         // Pass 2: top-level statements run in order.
@@ -846,7 +933,7 @@ impl Interp {
                             let field = &info.decl.fields[i];
                             match &field.default {
                                 Some(expr) => {
-                                    let mut def_frame = Frame::new(info.module.clone(), None);
+                                    let mut def_frame = Frame::new(info.field_modules[i].clone(), None);
                                     let v = self.eval_typed(&mut def_frame, expr, Some(&field.ty))?;
                                     if stdlib::is_numeric_type(&field.ty.base) {
                                         coerce_number(&field.ty.base, v, is_literal(expr))?
@@ -923,7 +1010,7 @@ impl Interp {
                     None => self.lookup(frame, name)?,
                 };
                 match (&declared, &v) {
-                    (Value::Type(d), Value::Object(o)) => Rc::ptr_eq(d, &o.def),
+                    (Value::Type(d), Value::Object(o)) => o.def.is_a(d),
                     (Value::EnumType(e), Value::Enum(ev, _)) => Rc::ptr_eq(e, ev),
                     (Value::Type(_), _) | (Value::EnumType(_), _) => false,
                     (Value::Null, _) => true, // `def Name = ...` structural types are not checked yet
@@ -1038,9 +1125,8 @@ impl Interp {
         if let ExprKind::Member(base, name) = &callee.kind {
             let target = self.eval(frame, base)?;
             if let Value::Object(obj) = &target {
-                if let Some(method) = obj.def.methods.get(name).cloned() {
+                if let Some((method, module)) = obj.def.methods.get(name).cloned() {
                     let args = self.eval_args(frame, arg_exprs)?;
-                    let module = obj.def.module.clone();
                     let label = format!("{}.{}", obj.def.decl.name, method.name);
                     return self.call_function(&method, module, Some(obj.clone()), args, &label);
                 }

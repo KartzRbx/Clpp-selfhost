@@ -49,6 +49,8 @@ a | b | c
 | `Math` | constants `pi`, `tau`, `e`, `huge`, `nan`, `epsilon`, `maxInt`, `minInt`; `abs`, `sign`, `floor`, `ceil`, `round`, `trunc`, `fract`, `sqrt`, `cbrt`, `pow`, `exp`, `log`, `log2`, `log10`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sinh`, `cosh`, `tanh`, `hypot`, `min`, `max`, `clamp`, `lerp`, `deg`, `rad`, `isNan`, `isInf`, `random`, `randomInt`, `seed` |
 | `Text` | `trim`, `trimStart`, `trimEnd`, `lower`, `upper`, `contains`, `startsWith`, `endsWith`, `indexOf`, `lastIndexOf`, `count`, `replace`, `split`, `join`, `repeat`, `reverse`, `chars`, `code`, `fromCode`, `padLeft`, `padRight`, `toNumber`, `isNumber`, `format` |
 | `Table` | `keys`, `values`, `has`, `get`, `merge`, `copy`, `reverse`, `sorted`, `contains`, `indexOf`, `count`, `slice`, `concat`, `unique`, `range`, `fill`, `sum`, `min`, `max`, `isEmpty` |
+| `Time` | `now`, `millis`, `clock`, `sleep`, `date` (UTC parts), `format` (`YYYY-MM-DD hh:mm:ss`) |
+| `Json` | `parse` (objects become dictionaries), `stringify`, `pretty` |
 | `Fs` | `read`, `write`, `exists` (paths relative to the working directory; `..` is rejected) |
 
 Hover over any member in VS Code for its signature and description. `Table` functions

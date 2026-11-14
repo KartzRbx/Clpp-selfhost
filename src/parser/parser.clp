@@ -681,16 +681,19 @@ export def Parser {
         if (@CheckText("<")) {
             typeParameters = @ParseTypeParameters()
         }
+        << def Mage:Entity { ... }: the base def is kept in Value.
+        string baseName = ""
+        if (@MatchKind(TokenModule.TokenKind::Colon)) {
+            baseName = @ParseTypeName()
+        }
         if (@CheckKind(TokenModule.TokenKind::LeftBrace)) {
             Ast.Node definition = @ParseDefBody(TokenModule.GetLexeme(@Source, name), isExported, startToken)
             definition.TypeName = typeParameters
+            definition.Value = baseName
             return definition
         }
-        if (@CheckKind(TokenModule.TokenKind::Colon)) {
-            report(
-                "def inheritance is not supported yet at "
-                    .: @Tokens[@Current].Line .: ":" .: @Tokens[@Current].Column
-            )
+        if (baseName != "") {
+            report("a def with a base needs a body: def " .: TokenModule.GetLexeme(@Source, name) .: ":" .: baseName .: " { ... }")
         }
         @this.ExpectKind(TokenModule.TokenKind::AssignmentOperator, "'=' or '{' after type name");
         Ast.Node typeExpression = @this.ParseTypeExpression();

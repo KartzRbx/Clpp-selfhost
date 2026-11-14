@@ -75,3 +75,15 @@ number unsafe = maybe  << expect: expected number
 if (maybe != null) {
     post(maybe.Name)
 }
+def Animal {
+    string Sound = "..."
+}
+def Dog:Animal {
+    number Tricks
+}
+Animal pet = Dog {}
+Dog notADog = Animal {}  << expect: 'notADog': expected Dog, got Animal
+number sound = pet.Sound  << expect: 'sound': expected number, got string
+Dog rex = Dog { Sound = "woof", Tricks = 2 }
+string tricks = rex.Tricks  << expect: 'tricks': expected string, got number
+string inherited = rex.Sound

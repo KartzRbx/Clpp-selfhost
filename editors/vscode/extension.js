@@ -7,6 +7,7 @@ const path = require('path');
 const { LspClient } = require('./client');
 
 let client = null;
+let extensionPath = __dirname;
 let output = null;
 let diagnostics = null;
 const versions = new Map();
@@ -19,6 +20,9 @@ function serverPath() {
     const candidate = path.join(folder.uri.fsPath, 'bootstrap', 'target', 'release', exe);
     if (fs.existsSync(candidate)) return candidate;
   }
+  // Packaged extension: the binaries ship in bin/<platform>-<arch>.
+  const bundled = path.join(extensionPath, 'bin', `${process.platform}-${process.arch}`, exe);
+  if (fs.existsSync(bundled)) return bundled;
   return 'clpp-boot';
 }
 
@@ -191,6 +195,7 @@ function runInTerminal(name, args) {
 }
 
 function activate(context) {
+  if (context.extensionPath) extensionPath = context.extensionPath;
   output = vscode.window.createOutputChannel('CL++');
   diagnostics = vscode.languages.createDiagnosticCollection('clpp');
   const selector = { language: 'clpp' };

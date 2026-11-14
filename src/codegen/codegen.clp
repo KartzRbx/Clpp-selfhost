@@ -116,6 +116,70 @@ export def Generator {
         return @LinkPrefixes[index]
     }
 
+    << Bytecode name of a def written `Name` or `Alias.Name` in this module.
+    string DefName(string written) {
+        number dot = Text.indexOf(written, ".")
+        if (dot > 0) {
+            number alias = find(@LinkAliases, written[0 .. dot])
+            if (alias >= 0) {
+                return @LinkPrefixes[alias] .: "$" .: written[dot + 1 .. len(written)]
+            }
+        }
+        return @Q(written)
+    }
+
+    << The def node and the generator (module) that declares it.
+    Ast.Node DefNode(string written) {
+        number dot = Text.indexOf(written, ".")
+        if (dot > 0) {
+            number alias = find(@LinkAliases, written[0 .. dot])
+            if (alias >= 0) {
+                return @LinkedModule(@LinkPrefixes[alias]).FindDef(written[dot + 1 .. len(written)])
+            }
+        }
+        return @FindDef(written)
+    }
+
+    Generator DefOwner(string written) {
+        number dot = Text.indexOf(written, ".")
+        if (dot > 0) {
+            number alias = find(@LinkAliases, written[0 .. dot])
+            if (alias >= 0) {
+                return @LinkedModule(@LinkPrefixes[alias])
+            }
+        }
+        return @this
+    }
+
+    << Fields of a def including inherited ones, base fields first.
+    array<Ast.Node> AllFields(Ast.Node definition) {
+        array<Ast.Node> fields = array<Ast.Node>()
+        if (definition.Value != "") {
+            Generator owner = @DefOwner(definition.Value)
+            Ast.Node base = @DefNode(definition.Value)
+            if (base.Name == "") {
+                @Fail(definition, "base def '" .: definition.Value .: "' not found")
+            }
+            for (Ast.Node inherited in owner.AllFields(base)) {
+                bool overridden = false
+                for (Ast.Node member in definition.Children) {
+                    if (member.Kind == Ast.NodeKind::FieldDeclaration and member.Name == inherited.Name) {
+                        overridden = true
+                    }
+                }
+                if (not overridden) {
+                    push(fields, inherited)
+                }
+            }
+        }
+        for (Ast.Node member in definition.Children) {
+            if (member.Kind == Ast.NodeKind::FieldDeclaration) {
+                push(fields, member)
+            }
+        }
+        return fields
+    }
+
     Generator LinkedModule(string prefix) {
         return @Modules.Modules[find(@Modules.Prefixes, prefix)]
     }
@@ -402,15 +466,16 @@ export def Generator {
         }
         for (Ast.Node definition in @Defs) {
             string line = ".def " .: @Q(definition.Name)
-            for (Ast.Node member in definition.Children) {
-                if (member.Kind == Ast.NodeKind::FieldDeclaration) {
-                    line = line .: " " .: member.Name
-                    if (find(NUMERIC_TYPES, member.TypeName) >= 0) {
-                        line = line .: ":" .: member.TypeName
-                    }
+            for (Ast.Node member in @AllFields(definition)) {
+                line = line .: " " .: member.Name
+                if (find(NUMERIC_TYPES, member.TypeName) >= 0) {
+                    line = line .: ":" .: member.TypeName
                 }
             }
             push(@Lines, line)
+            if (definition.Value != "") {
+                push(@Lines, ".base " .: @Q(definition.Name) .: " " .: @DefName(definition.Value))
+            }
         }
         for (string global in @Globals) {
             push(@Lines, ".global " .: @Q(global))
@@ -438,6 +503,11 @@ export def Generator {
     void Defaults(Ast.Node definition) {
         @BeginFunction(true, false)
         @Alloc()
+        if (definition.Value != "") {
+            << Inherited fields get the base def's defaults first.
+            number ignored = @Alloc()
+            @Emit("CALL r" .: ignored .: " " .: @DefName(definition.Value) .: ".__defaults r0 1")
+        }
         for (Ast.Node member in definition.Children) {
             if (member.Kind == Ast.NodeKind::FieldDeclaration) {
                 number mark = @Next
@@ -1141,8 +1211,12 @@ export def Generator {
         while (index < len(node.Children)) {
             Ast.Node field = node.Children[index]
             bool known = false
-            for (Ast.Node member in definition.Children) {
-                if (member.Kind == Ast.NodeKind::FieldDeclaration and member.Name == field.Name) {
+            Generator owner = @this
+            if (typePath.Kind == Ast.NodeKind::MemberExpression) {
+                owner = @LinkedModule(@LinkedPrefix(typePath.Children[0]))
+            }
+            for (Ast.Node member in owner.AllFields(definition)) {
+                if (member.Name == field.Name) {
                     known = true
                 }
             }

@@ -32,6 +32,10 @@ null narrowing (`if (x != null)`, `guard (x != null)`) are checked by the type c
 Template strings `` `Hello ${name}` `` work everywhere. `clpp-boot build` type checks before
 compiling (the checker itself is still in Rust, not in CL++).
 
+Inheritance `def Mage:Entity` (overriding, base defaults, polymorphism, bases in other
+files), `@clpp.time` and `@clpp.json`, and a self-contained `.vsix` that bundles clpp-boot,
+clpp-vm and the compiler (`python editors/vscode/package.py`).
+
 Still open, in order: type checking inside the self-hosted compiler, generics, `match`, lambdas, buffers, concurrency,
 package manager, debugger.
 

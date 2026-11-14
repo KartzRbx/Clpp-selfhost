@@ -228,8 +228,24 @@ impl<'a> TypeChecker<'a> {
         self.diags.push(Diag { line, col, len, severity: Severity::Error, message, help });
     }
 
+    /// `Mage@p` is an `Entity@q` when Mage inherits from Entity.
+    fn is_subclass(&self, actual: &str, target: &str) -> bool {
+        let target_base = split_type(target).0;
+        let Some((mut def, mut index)) = self.def_sym(actual) else { return false };
+        for _ in 0..16 {
+            let Some((ctx, base)) = crate::analysis::base_of(def, index, &self.a.linked) else { return false };
+            if format!("{}@{}", base.name, path_key(&ctx.path)) == target_base {
+                return true;
+            }
+            def = base;
+            index = ctx;
+        }
+        false
+    }
+
     fn mismatch(&mut self, line: usize, anchor: &str, what: &str, target: &str, actual: &str) {
-        if !assignable(target, actual) {
+        let inner_target = optional_inner(target).unwrap_or_else(|| target.to_string());
+        if !assignable(target, actual) && !self.is_subclass(actual, &inner_target) {
             let message = format!("{}: expected {}, got {}", what, show(target), show(actual));
             self.error(line, anchor, message, conversion_help(target, actual));
         }
@@ -590,7 +606,22 @@ impl<'a> TypeChecker<'a> {
             return None;
         }
         let (def, index) = self.def_sym(base_type)?;
-        match def.children.iter().find(|c| c.name == member) {
+        // Inherited members come from the base def's own file.
+        let mut owner = (def, index);
+        let mut found = def.children.iter().find(|c| c.name == member);
+        let mut depth = 0;
+        while found.is_none() && depth < 16 {
+            match crate::analysis::base_of(owner.0, owner.1, &self.a.linked) {
+                Some((ctx, base)) => {
+                    owner = (base, ctx);
+                    found = base.children.iter().find(|c| c.name == member);
+                }
+                None => break,
+            }
+            depth += 1;
+        }
+        let index = owner.1;
+        match found {
             Some(m) => {
                 let mut m = m.clone();
                 // Box<number>.Value: replace the def's type parameters by the arguments.

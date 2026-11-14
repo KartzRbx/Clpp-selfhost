@@ -287,6 +287,8 @@ pub struct Def {
     pub fields: Vec<String>,
     /// Numeric type of each field (`X:f32` in `.def`), enforced on SETF.
     pub field_types: Vec<Option<String>>,
+    /// `.base Mage Entity`: methods missing here are looked up in the base.
+    pub base: Option<u32>,
     pub methods: HashMap<String, u32>,
 }
 
@@ -451,6 +453,7 @@ pub fn load(source: &str) -> Result<Program, String> {
     let mut raw: Vec<RawFunc> = Vec::new();
     let mut current: Option<RawFunc> = None;
     let mut source_line = 0u32;
+    let mut bases: Vec<(String, String)> = Vec::new();
     let mut current_source = String::new();
     let mut saw_header = false;
 
@@ -496,9 +499,10 @@ pub fn load(source: &str) -> Result<Program, String> {
                         }
                     }
                 }
-                program.defs.push(Def { name: parts[1].clone(), fields, field_types, methods: HashMap::new() })
+                program.defs.push(Def { name: parts[1].clone(), fields, field_types, base: None, methods: HashMap::new() })
             }
             ".global" => program.globals.push(parts[1].clone()),
+            ".base" => bases.push((parts[1].clone(), parts[2].clone())),
             ".func" => {
                 if current.is_some() {
                     return Err(err("'.func' inside another function".into()));
@@ -542,6 +546,11 @@ pub fn load(source: &str) -> Result<Program, String> {
     let enum_index: HashMap<String, u32> = program.enums.iter().enumerate().map(|(i, e)| (e.name.clone(), i as u32)).collect();
     let global_index: HashMap<String, u32> = program.globals.iter().enumerate().map(|(i, g)| (g.clone(), i as u32)).collect();
 
+    for (child, base) in &bases {
+        let c = *def_index.get(child).ok_or_else(|| format!("'.base': unknown def '{}'", child))?;
+        let b = *def_index.get(base).ok_or_else(|| format!("'.base': unknown def '{}'", base))?;
+        program.defs[c as usize].base = Some(b);
+    }
     for (i, f) in raw.iter().enumerate() {
         if let Some((owner, method)) = f.name.split_once('.') {
             if let Some(&d) = def_index.get(owner) {
@@ -822,10 +831,22 @@ impl<'p> Vm<'p> {
                         cfunc
                     } else {
                         let def = &p.defs[obj.def as usize];
-                        match def.methods.get(&**name) {
+                        // Look through the base defs for inherited methods.
+                        let mut found = def.methods.get(&**name).copied();
+                        let mut cursor = def.base;
+                        while found.is_none() {
+                            match cursor {
+                                Some(b) => {
+                                    found = p.defs[b as usize].methods.get(&**name).copied();
+                                    cursor = p.defs[b as usize].base;
+                                }
+                                None => break,
+                            }
+                        }
+                        match found {
                             Some(f) => {
-                                cache.set((obj.def, *f));
-                                *f
+                                cache.set((obj.def, f));
+                                f
                             }
                             None => {
                                 let slot = def.fields.iter().position(|f| f == &**name).ok_or_else(|| format!("{} has no method '{}'", plain(&def.name), name))?;
@@ -1185,7 +1206,22 @@ fn convert(p: &Program, v: &Value, ty: &str, exact: bool) -> Result<Value, Strin
         "dictionary" => matches!(v, Value::Dict(_)),
         name => {
             if let Some(d) = p.defs.iter().position(|d| d.name == name) {
-                matches!(v, Value::Object(o) if o.def as usize == d)
+                // An object of a def that inherits from `name` also matches.
+                match v {
+                    Value::Object(o) => {
+                        let mut cursor = Some(o.def);
+                        let mut ok = false;
+                        while let Some(c) = cursor {
+                            if c as usize == d {
+                                ok = true;
+                                break;
+                            }
+                            cursor = p.defs[c as usize].base;
+                        }
+                        ok
+                    }
+                    _ => false,
+                }
             } else if let Some(e) = p.enums.iter().position(|e| e.name == name) {
                 matches!(v, Value::Enum(x, _) if *x as usize == e)
             } else {

@@ -163,6 +163,15 @@ pub const CATALOG: &[(&str, &str, &str, &str)] = &[
     ("table", "min", "number Table.min(array<number> items)", "Smallest element."),
     ("table", "max", "number Table.max(array<number> items)", "Largest element."),
     ("table", "isEmpty", "bool Table.isEmpty(T collection)", "True when the array or dictionary has no elements."),
+    ("time", "now", "float Time.now()", "Seconds since 1970-01-01 UTC, with fractions."),
+    ("time", "millis", "number Time.millis()", "Milliseconds since 1970-01-01 UTC."),
+    ("time", "clock", "float Time.clock()", "Seconds since the program started; use it to measure durations."),
+    ("time", "sleep", "void Time.sleep(number milliseconds)", "Pauses the program."),
+    ("time", "date", "dictionary<string, number> Time.date(float seconds)", "UTC date parts of a time: year, month, day, hour, minute, second, weekday (0 = Sunday)."),
+    ("time", "format", "string Time.format(float seconds)", "UTC time as \"YYYY-MM-DD hh:mm:ss\"."),
+    ("json", "parse", "T Json.parse(string text)", "Reads JSON: objects become dictionaries, arrays become arrays, numbers become number or float."),
+    ("json", "stringify", "string Json.stringify(T value)", "Writes a value as compact JSON."),
+    ("json", "pretty", "string Json.pretty(T value)", "Writes a value as indented JSON."),
     ("fs", "read", "string Fs.read(string path)", "Reads a whole file as text. Paths are relative to the working directory; '..' is not allowed."),
     ("fs", "write", "void Fs.write(string path, string text)", "Writes text to a file, replacing it. '..' is not allowed."),
     ("fs", "exists", "bool Fs.exists(string path)", "True when the file or folder exists."),
@@ -175,6 +184,8 @@ pub fn module_alias(link: &str) -> Option<(&'static str, &'static str)> {
         "@clpp.text" => Some(("text", "Text")),
         "@clpp.table" => Some(("table", "Table")),
         "@clpp.fs" => Some(("fs", "Fs")),
+        "@clpp.time" => Some(("time", "Time")),
+        "@clpp.json" => Some(("json", "Json")),
         _ => None,
     }
 }
@@ -259,7 +270,103 @@ fn char_index(haystack: &str, byte: usize) -> i64 {
     haystack[..byte].chars().count() as i64
 }
 
+fn epoch() -> std::time::Duration {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default()
+}
+
+/// UTC (year, month, day, hour, minute, second, weekday) of a Unix time.
+fn civil(seconds: f64) -> (i64, i64, i64, i64, i64, i64, i64) {
+    let total = seconds.floor() as i64;
+    let days = total.div_euclid(86_400);
+    let rest = total.rem_euclid(86_400);
+    // Howard Hinnant's days-from-civil, inverted.
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    let weekday = (days + 4).rem_euclid(7);
+    (year, month, day, rest / 3600, rest % 3600 / 60, rest % 60, weekday)
+}
+
+fn from_json(v: &crate::json::Json) -> SVal {
+    use crate::json::Json;
+    match v {
+        Json::Null => SVal::Null,
+        Json::Bool(b) => SVal::Bool(*b),
+        Json::Num(n) => {
+            if n.fract() == 0.0 && n.abs() < 9e15 {
+                SVal::Int(*n as i64)
+            } else {
+                SVal::Float(*n)
+            }
+        }
+        Json::Str(s) => SVal::Str(s.clone()),
+        Json::Arr(items) => SVal::List(items.iter().map(from_json).collect()),
+        Json::Obj(pairs) => SVal::Map(pairs.iter().map(|(k, v)| (SVal::Str(k.clone()), from_json(v))).collect()),
+    }
+}
+
+fn to_json(v: &SVal, what: &str) -> Result<crate::json::Json, String> {
+    use crate::json::Json;
+    Ok(match v {
+        SVal::Null => Json::Null,
+        SVal::Bool(b) => Json::Bool(*b),
+        SVal::Int(i) => Json::Num(*i as f64),
+        SVal::Float(f) => {
+            if !f.is_finite() {
+                return Err(format!("{}: {} has no JSON form", what, f));
+            }
+            Json::Num(*f)
+        }
+        SVal::Str(s) => Json::Str(s.clone()),
+        SVal::List(items) => Json::Arr(items.iter().map(|x| to_json(x, what)).collect::<Result<_, _>>()?),
+        SVal::Map(entries) => Json::Obj(
+            entries
+                .iter()
+                .map(|(k, x)| Ok((k.text(), to_json(x, what)?)))
+                .collect::<Result<_, String>>()?,
+        ),
+        SVal::Other(_, text) => return Err(format!("{}: cannot write {} as JSON; convert it to a dictionary first", what, text)),
+    })
+}
+
+fn pretty(v: &crate::json::Json, depth: usize, out: &mut String) {
+    use crate::json::Json;
+    let pad = |d: usize| "  ".repeat(d);
+    match v {
+        Json::Arr(items) if !items.is_empty() => {
+            out.push_str("[\n");
+            for (i, item) in items.iter().enumerate() {
+                out.push_str(&pad(depth + 1));
+                pretty(item, depth + 1, out);
+                out.push_str(if i + 1 < items.len() { ",\n" } else { "\n" });
+            }
+            out.push_str(&pad(depth));
+            out.push(']');
+        }
+        Json::Obj(pairs) if !pairs.is_empty() => {
+            out.push_str("{\n");
+            for (i, (k, item)) in pairs.iter().enumerate() {
+                out.push_str(&pad(depth + 1));
+                out.push_str(&Json::Str(k.clone()).to_text());
+                out.push_str(": ");
+                pretty(item, depth + 1, out);
+                out.push_str(if i + 1 < pairs.len() { ",\n" } else { "\n" });
+            }
+            out.push_str(&pad(depth));
+            out.push('}');
+        }
+        other => out.push_str(&other.to_text()),
+    }
+}
+
 thread_local! {
+    static START: std::time::Instant = std::time::Instant::now();
     static RNG: Cell<u64> = Cell::new(
         std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(0x9E37_79B9) | 1
     );
@@ -627,6 +734,36 @@ pub fn call(module: &str, member: &str, args: &[SVal]) -> Result<SVal, String> {
             other => return Err(format!("Table.isEmpty needs an array or dictionary, got {}", other.type_name())),
         },
 
+        ("time", "now") => SVal::Float(epoch().as_secs_f64()),
+        ("time", "millis") => SVal::Int(epoch().as_millis() as i64),
+        ("time", "clock") => SVal::Float(START.with(|s| s.elapsed().as_secs_f64())),
+        ("time", "sleep") => {
+            let ms = int(a(0), &name)?;
+            if ms > 0 {
+                std::thread::sleep(std::time::Duration::from_millis(ms as u64));
+            }
+            SVal::Null
+        }
+        ("time", "date") => {
+            let (y, mo, d, h, mi, s, wd) = civil(float(a(0), &name)?);
+            let parts = [("year", y), ("month", mo), ("day", d), ("hour", h), ("minute", mi), ("second", s), ("weekday", wd)];
+            SVal::Map(parts.iter().map(|(k, v)| (SVal::Str(k.to_string()), SVal::Int(*v))).collect())
+        }
+        ("time", "format") => {
+            let (y, mo, d, h, mi, s, _) = civil(float(a(0), &name)?);
+            SVal::Str(format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", y, mo, d, h, mi, s))
+        }
+        ("json", "parse") => {
+            let text = string(a(0), &name)?;
+            let value = crate::json::parse(text).map_err(|e| format!("Json.parse: {}", e))?;
+            from_json(&value)
+        }
+        ("json", "stringify") => SVal::Str(to_json(a(0), &name)?.to_text()),
+        ("json", "pretty") => {
+            let mut out = String::new();
+            pretty(&to_json(a(0), &name)?, 0, &mut out);
+            SVal::Str(out)
+        }
         ("fs", "read") => {
             let path = string(a(0), &name)?;
             checked_path(path, "Fs.read")?;

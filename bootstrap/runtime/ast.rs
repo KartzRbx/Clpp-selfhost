@@ -112,7 +112,7 @@ pub struct FnDecl {
     pub end_line: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FieldDecl {
     pub name: String,
     pub ty: TypeName,
@@ -123,6 +123,8 @@ pub struct FieldDecl {
 #[derive(Debug)]
 pub struct DefDecl {
     pub name: String,
+    /// `def Mage:Entity`: the base def.
+    pub base: Option<TypeName>,
     /// `def Box<T>`: type parameter names.
     pub type_params: Vec<String>,
     pub pos: Pos,

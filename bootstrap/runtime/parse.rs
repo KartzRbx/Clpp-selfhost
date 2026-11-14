@@ -275,9 +275,7 @@ impl<'a> Parser<'a> {
             self.terminator("type declaration")?;
             return Ok(Item::TypeAlias { name, exported, pos });
         }
-        if self.is_sym(":") {
-            return self.error("def inheritance is not supported by clpp-boot yet");
-        }
+        let base = if self.eat_sym(":") { Some(self.type_name()?) } else { None };
         self.expect_sym("{")?;
         let mut fields = Vec::new();
         let mut methods = Vec::new();
@@ -304,7 +302,7 @@ impl<'a> Parser<'a> {
         let end_line = self.tok().line;
         self.expect_sym("}")?;
         self.eat_sym(";");
-        Ok(Item::Def { decl: Rc::new(DefDecl { name, type_params, pos, end_line, fields, methods }), exported })
+        Ok(Item::Def { decl: Rc::new(DefDecl { name, base, type_params, pos, end_line, fields, methods }), exported })
     }
 
     fn function_rest(&mut self, name: String, ret: TypeName, line: usize, pos: Pos) -> PResult<Rc<FnDecl>> {

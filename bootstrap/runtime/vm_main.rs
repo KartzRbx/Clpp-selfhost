@@ -1,6 +1,7 @@
 //! `clpp-vm <file.clpb> [args...]`: runs CL++ bytecode.
 
 mod diag;
+mod json;
 mod stdlib;
 mod vm;
 

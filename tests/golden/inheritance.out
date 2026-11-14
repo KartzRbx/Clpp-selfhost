@@ -1,0 +1,8 @@
+units loaded
+shapes loaded
+Rui (40 hp) {"hit 20", "hit 40"}
+Ada (60 hp) {"shield 20", "hit 40"}
+Archmage Zed (90 hp, 5 mana) {"hit 20", "hit 40"}
+true
+50
+shape (Kind::Square) area 100 owned by Ada

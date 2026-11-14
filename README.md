@@ -73,6 +73,7 @@ suporta `match`, lambdas, templates `` ` ``, `def` genérico nem módulos `@clpp
 | `clpp-boot check --expect tests/typecheck/*.fail.clp` | Confere que cada `<< expect: ...` corresponde a um erro na linha. |
 | `clpp-boot fmt [--check] arquivo.clp` | Formata (indentação, espaços, remove `;` sobrando). |
 | `clpp-boot lsp` | Servidor de linguagem para editores. |
+| `python editors/vscode/package.py` | Gera o `.vsix` com `clpp-boot`, `clpp-vm` e o compilador dentro (instale com `code --install-extension`). |
 
 A extensão do VS Code está em [editors/vscode](editors/vscode/README.md) (ícones, cores,
 erros ao digitar, hover, ir para definição, outline, autocompletar, Format Document,
@@ -81,6 +82,6 @@ erros ao digitar, hover, ir para definição, outline, autocompletar, Format Doc
 
 Módulos padrão: `@clpp.math` (`pi`, `huge`, `sqrt`, `floor`, `random`...), `@clpp.text`
 (`split`, `trim`, `replace`, `format`...), `@clpp.table` (`keys`, `merge`, `sorted`, `sum`...)
-e `@clpp.fs`. Tipos numéricos: `number`, `float`, `i8`–`i64`, `u8`–`u64`, `f16`, `f32`, `f64`;
+`@clpp.fs`, `@clpp.time` (`now`, `clock`, `sleep`, `date`, `format`) e `@clpp.json` (`parse`, `stringify`, `pretty`). Tipos numéricos: `number`, `float`, `i8`–`i64`, `u8`–`u64`, `f16`, `f32`, `f64`;
 `(Tipo valor)` garante o tipo exato. Veja [docs/reference/stdlib.md](docs/reference/stdlib.md).
 

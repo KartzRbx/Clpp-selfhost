@@ -251,10 +251,16 @@ fn build(argv: &[String]) -> bool {
     }
     // 2. Compile with the compiler written in CL++.
     let exe = std::env::current_exe().expect("current exe");
-    let root = exe.ancestors().nth(4).map(Path::to_path_buf).filter(|r| r.join("src/clpp.clp").exists());
-    let compiler = match &root {
-        Some(r) if !Path::new("src/clpp.clp").exists() => r.join("src/clpp.clp"),
-        _ => PathBuf::from("src/clpp.clp"),
+    // The compiler sources: in the working directory, in the repository the
+    // binary was built in, or next to a packaged binary (bin/<platform>/../../compiler).
+    let candidates = [
+        PathBuf::from("src/clpp.clp"),
+        exe.ancestors().nth(4).map(|r| r.join("src/clpp.clp")).unwrap_or_default(),
+        exe.ancestors().nth(3).map(|r| r.join("compiler/clpp.clp")).unwrap_or_default(),
+    ];
+    let Some(compiler) = candidates.iter().find(|c| c.exists()).cloned() else {
+        eprintln!("compiler sources (src/clpp.clp) not found");
+        return false;
     };
     let compiled = Command::new(&exe).arg(&compiler).arg(input).arg(&output).status();
     if !matches!(compiled, Ok(s) if s.success()) {
