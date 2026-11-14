@@ -460,13 +460,8 @@ export def Lexer {
                 break;
             }
 
-            if (
-                @this.Source[@this.Position] == "\\"
-                and @this.Position + 2 < @this.SourceLength
-                and @this.Source[@this.Position + 1] == "$"
-                and @this.Source[@this.Position + 2] == "{"
-            ) {
-                @this.Advance();
+            if (@this.Source[@this.Position] == "\\" and @this.Position + 1 < @this.SourceLength) {
+                << An escape (\` \${ \n ...) never ends the text.
                 @this.Advance();
                 @this.Advance();
             } else {

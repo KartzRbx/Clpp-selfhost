@@ -29,6 +29,9 @@ value) work in the interpreter, the self-hosted compiler and the VM.
 Generics (`def Box<T>`, `template<typename T>`, `Box<number> { }`) and `optional<T>` with
 null narrowing (`if (x != null)`, `guard (x != null)`) are checked by the type checker.
 
+Template strings `` `Hello ${name}` `` work everywhere. `clpp-boot build` type checks before
+compiling (the checker itself is still in Rust, not in CL++).
+
 Still open, in order: type checking inside the self-hosted compiler, generics, `match`, lambdas, buffers, concurrency,
 package manager, debugger.
 
@@ -197,7 +200,7 @@ The CL++ column describes this repository, not the official C++20 checkout.
 | Closures | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | `func (T x) -> R { }` capturing variables. |
 | Iterators / generators | ✅ | ✅ | ✅ | range-over-func | ranges | 🟡 | `for-in` only over arrays/dicts/strings; add an iterator protocol. |
 | String API | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | split, trim, contains, replace, format, upper/lower, char codes. |
-| String interpolation | `format!` | template | f-strings | `Sprintf` | `std::format` | 🟡 | Lexer has `` `${}` ``; parser and `clpp-boot` don't evaluate it. |
+| String interpolation | `format!` | template | f-strings | `Sprintf` | `std::format` | ✅ | Lexer has `` `${}` ``; parser and `clpp-boot` don't evaluate it. |
 | Sized numbers | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ | `i8`…`f64` (section 9). |
 | Concurrency | async + threads | async | asyncio | goroutines | threads | ❌ | Pick one model: tasks + channels (Go) suits game logic. |
 | Operator overloading | traits | ❌ | dunders | ❌ | ✅ | ❌ | Decide yes/no (`operator` is already a keyword). |

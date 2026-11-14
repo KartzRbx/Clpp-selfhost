@@ -65,6 +65,7 @@ suporta `match`, lambdas, templates `` ` ``, `def` genérico nem módulos `@clpp
 | `clpp-boot arquivo.clp` | Executa no interpretador (estágio 0). |
 | `clpp-boot test tests` | Roda todos os testes `.clp`. |
 | `clpp-boot golden` | Compila cada programa de `tests/golden` com o compilador em CL++, roda no `clpp-vm` e exige a mesma saída do interpretador. |
+| `clpp-boot build entrada.clp [-o saida.clpb] [--run]` | Verifica tipos, compila (só se não houver erros) e, com `--run`, executa no `clpp-vm`. |
 | `clpp-boot src/clpp.clp entrada.clp saida.clpb` | Compila para bytecode. |
 | `clpp-boot bootstrap` | Auto-hospedagem: o compilador compila a si mesmo três vezes; os três bytecodes precisam ser idênticos. |
 | `clpp-vm saida.clpb` | Executa o bytecode na VM de registradores. |

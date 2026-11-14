@@ -10,6 +10,8 @@ pub enum Tk {
     Int,
     Float,
     Str,
+    /// `` `text ${expr}` ``: the raw text between the backticks.
+    Template,
     Sym,
     Eof,
 }
@@ -267,7 +269,50 @@ pub fn lex_full(source: &str, file: &str) -> Result<(Vec<Token>, Vec<Comment>), 
         }
 
         if ch == '`' {
-            err!(line, column, "template strings are not supported by clpp-boot yet");
+            // Raw content up to the closing backtick; `${...}` may nest braces,
+            // strings and other templates. The parser splits it.
+            let (start_line, start_column) = (line, column);
+            pos += 1;
+            column += 1;
+            let content_start = pos;
+            let mut depth = 0usize;
+            loop {
+                if pos >= chars.len() {
+                    err!(start_line, start_column, "unterminated template string");
+                }
+                let c = chars[pos];
+                if c == '\\' && pos + 1 < chars.len() {
+                    pos += 2;
+                    column += 2;
+                    continue;
+                }
+                if depth == 0 && c == '`' {
+                    break;
+                }
+                if c == '$' && pos + 1 < chars.len() && chars[pos + 1] == '{' {
+                    depth += 1;
+                    pos += 2;
+                    column += 2;
+                    continue;
+                }
+                if depth > 0 && c == '{' {
+                    depth += 1;
+                } else if depth > 0 && c == '}' {
+                    depth -= 1;
+                }
+                if c == '\n' {
+                    line += 1;
+                    column = 1;
+                } else {
+                    column += 1;
+                }
+                pos += 1;
+            }
+            let content: String = chars[content_start..pos].iter().collect();
+            pos += 1;
+            column += 1;
+            tokens.push(Token { kind: Tk::Template, text: content, line: start_line, column: start_column, start, end: pos });
+            continue;
         }
 
         let mut matched = None;

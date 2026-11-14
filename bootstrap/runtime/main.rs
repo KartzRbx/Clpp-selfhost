@@ -7,6 +7,7 @@
 //!   clpp-boot check --expect <f>...  compare with `<< expect:` comments (*.fail.clp)
 //!   clpp-boot fmt [--check] <file>...  format files in place
 //!   clpp-boot lsp                    language server over stdio
+//!   clpp-boot build <f> [-o out] [--run]  type check, compile, run on clpp-vm
 //!   clpp-boot bootstrap              the compiler compiles itself; stages must match
 //!   clpp-boot golden [dir]           interpreter vs compiled bytecode (default: tests/golden)
 
@@ -193,6 +194,82 @@ fn usage() -> ExitCode {
     ExitCode::from(2)
 }
 
+/// `clpp-boot build <file.clp> [-o out.clpb] [--run [args...]]`: type check,
+/// compile with the self-hosted compiler, and optionally run on clpp-vm.
+fn build(argv: &[String]) -> bool {
+    use std::process::Command;
+    let Some(input) = argv.first() else {
+        eprintln!("usage: clpp-boot build <file.clp> [-o out.clpb] [--run [args...]]");
+        return false;
+    };
+    let mut output = Path::new(input).with_extension("clpb").to_string_lossy().to_string();
+    let mut run_args: Option<Vec<String>> = None;
+    let mut i = 1;
+    while i < argv.len() {
+        match argv[i].as_str() {
+            "-o" if i + 1 < argv.len() => {
+                output = argv[i + 1].clone();
+                i += 2;
+            }
+            "--run" => {
+                run_args = Some(argv[i + 1..].to_vec());
+                break;
+            }
+            other => {
+                eprintln!("unknown option '{}'", other);
+                return false;
+            }
+        }
+    }
+    // 1. Static checks: nothing is compiled while there are errors.
+    let text = match std::fs::read_to_string(input) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("{}: cannot read: {}", input, e);
+            return false;
+        }
+    };
+    let loader = |p: &Path| std::fs::read_to_string(p).ok();
+    let result = analysis::analyze(Path::new(input), &text, &loader);
+    let errors: Vec<&analysis::Diag> = result.diags.iter().filter(|d| d.severity == analysis::Severity::Error).collect();
+    if !errors.is_empty() {
+        for d in &errors {
+            let report = diag::Report {
+                severity: "error",
+                message: d.message.clone(),
+                file: input.clone(),
+                line: d.line,
+                col: d.col,
+                len: d.len,
+                help: d.help.clone(),
+                trace: Vec::new(),
+            };
+            eprintln!("{}", diag::render(&report, Some(&text)));
+        }
+        eprintln!("build stopped: {} error(s)", errors.len());
+        return false;
+    }
+    // 2. Compile with the compiler written in CL++.
+    let exe = std::env::current_exe().expect("current exe");
+    let root = exe.ancestors().nth(4).map(Path::to_path_buf).filter(|r| r.join("src/clpp.clp").exists());
+    let compiler = match &root {
+        Some(r) if !Path::new("src/clpp.clp").exists() => r.join("src/clpp.clp"),
+        _ => PathBuf::from("src/clpp.clp"),
+    };
+    let compiled = Command::new(&exe).arg(&compiler).arg(input).arg(&output).status();
+    if !matches!(compiled, Ok(s) if s.success()) {
+        eprintln!("build failed while compiling {}", input);
+        return false;
+    }
+    println!("built {}", output);
+    // 3. Optionally run it.
+    if let Some(args) = run_args {
+        let vm = exe.with_file_name(if cfg!(windows) { "clpp-vm.exe" } else { "clpp-vm" });
+        return matches!(Command::new(vm).arg(&output).args(args).status(), Ok(s) if s.success());
+    }
+    true
+}
+
 /// `check --expect`: every `<< expect: text` comment must match an error on
 /// its line, and there must be no other errors.
 fn check_expected(files: &[String]) -> bool {
@@ -313,6 +390,13 @@ fn real_main() -> ExitCode {
                 }
             }
             if ok {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::FAILURE
+            }
+        }
+        Some("build") => {
+            if build(&argv[1..]) {
                 ExitCode::SUCCESS
             } else {
                 ExitCode::FAILURE

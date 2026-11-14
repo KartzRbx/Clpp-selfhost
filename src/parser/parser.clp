@@ -1188,6 +1188,67 @@ export def Parser {
         return statement;
     }
 
+    << `a ${b} c` becomes "a " .: b .: " c" (a chain of BinaryExpression ".:").
+    Ast.Node ParseTemplate() {
+        number startToken = @Current
+        @ExpectKind(TokenModule.TokenKind::TemplateStart, "template string")
+        Ast.Node result = @NewNode(Ast.NodeKind::LiteralExpression, "", "", "\"\"", startToken, @Current)
+        while (not @CheckKind(TokenModule.TokenKind::TemplateEnd) and not @IsAtEnd()) {
+            Ast.Node part = result
+            if (@CheckKind(TokenModule.TokenKind::TemplateText)) {
+                part = @NewNode(
+                    Ast.NodeKind::LiteralExpression,
+                    "",
+                    "",
+                    @TemplateTextLiteral(@Text(@Current)),
+                    @Current,
+                    @Current + 1
+                )
+                @Current += 1
+            } else {
+                @ExpectKind(TokenModule.TokenKind::TemplateInterpolationStart, "'${' or text in template string")
+                part = @ParseExpression(0)
+                @ExpectKind(TokenModule.TokenKind::TemplateInterpolationEnd, "'}' to close ${ in template string")
+            }
+            Ast.Node joined = @NewNode(Ast.NodeKind::BinaryExpression, ".:", "", "", startToken, @Current)
+            push(joined.Children, result)
+            push(joined.Children, part)
+            result = joined
+        }
+        @ExpectKind(TokenModule.TokenKind::TemplateEnd, "'`' to close template string")
+        result.EndToken = @Current
+        return result
+    }
+
+    << Template text as a quoted string literal: \` and \$ lose their
+    << backslash, quotes are escaped and line breaks become \n.
+    string TemplateTextLiteral(string raw) {
+        string out = "\""
+        number i = 0
+        while (i < len(raw)) {
+            string c = raw[i]
+            if (c == "\\" and i + 1 < len(raw)) {
+                string next = raw[i + 1]
+                if (next == "`" or next == "$") {
+                    out = out .: next
+                } else {
+                    out = out .: c .: next
+                }
+                i += 2
+            } else {
+                if (c == "\"") {
+                    out = out .: "\\\""
+                } else if (c == "\n") {
+                    out = out .: "\\n"
+                } else if (c != "\r") {
+                    out = out .: c
+                }
+                i += 1
+            }
+        }
+        return out .: "\""
+    }
+
     << func (Type a, Type b) -> Type { body }
     << Children: Parameter nodes, then the body Block. TypeName is the return type.
     Ast.Node ParseLambda() {
@@ -1820,29 +1881,8 @@ export def Parser {
             return @this.ParseCollectionLiteral();
         }
 
-        if (@this.CheckKind(TokenModule.TokenKind::TemplateStart)) {
-            number templateDepth = 0;
-            while (not @this.IsAtEnd()) {
-                if (@this.MatchKind(TokenModule.TokenKind::TemplateStart)) {
-                    templateDepth += 1;
-                } else if (@this.MatchKind(TokenModule.TokenKind::TemplateEnd)) {
-                    templateDepth -= 1;
-                    if (templateDepth == 0) {
-                        break;
-                    }
-                } else {
-                    @this.Current += 1;
-                }
-            }
-            Ast.Node templateNode = @this.NewNode(
-                Ast.NodeKind::LiteralExpression,
-                "template",
-                "string",
-                "",
-                startToken,
-                @this.Current
-            );
-            return templateNode;
+        if (@CheckKind(TokenModule.TokenKind::TemplateStart)) {
+            return @ParseTemplate()
         }
 
         TokenModule.Token token = @this.Tokens[@this.Current];

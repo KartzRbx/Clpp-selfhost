@@ -677,6 +677,65 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
+    /// `` `a ${b} c` `` becomes `"a " .: b .: " c"`.
+    fn template(&mut self, t: &Token) -> PResult<Expr> {
+        let line = t.line;
+        let chars: Vec<char> = t.text.chars().collect();
+        let mut result = Expr { kind: ExprKind::Str(Rc::from("")), line };
+        let mut text = String::new();
+        let join = |left: Expr, right: Expr| Expr { kind: ExprKind::Binary(".:".into(), Box::new(left), Box::new(right)), line };
+        let mut i = 0;
+        while i < chars.len() {
+            let c = chars[i];
+            if c == '\\' && i + 1 < chars.len() {
+                text.push(match chars[i + 1] {
+                    'n' => '\n',
+                    't' => '\t',
+                    'r' => '\r',
+                    '0' => '\0',
+                    other => other,
+                });
+                i += 2;
+                continue;
+            }
+            if c == '$' && i + 1 < chars.len() && chars[i + 1] == '{' {
+                let mut depth = 1;
+                let mut j = i + 2;
+                while j < chars.len() && depth > 0 {
+                    match chars[j] {
+                        '{' => depth += 1,
+                        '}' => depth -= 1,
+                        _ => {}
+                    }
+                    j += 1;
+                }
+                let inner: String = chars[i + 2..j - 1].iter().collect();
+                if inner.trim().is_empty() {
+                    return Err(format!("{}:{}:{}: empty ${{}} in template string", self.file, t.line, t.column));
+                }
+                let tokens = crate::lex::lex(&inner, self.file).map_err(|m| format!("{} (inside a template string on line {})", m, line))?;
+                let mut sub = Parser { toks: tokens, pos: 0, file: self.file };
+                let value = sub.expr(0)?;
+                if !sub.at_end() {
+                    return Err(format!("{}:{}:{}: unexpected text inside ${{}} of a template string", self.file, t.line, t.column));
+                }
+                if !text.is_empty() {
+                    result = join(result, Expr { kind: ExprKind::Str(Rc::from(text.as_str())), line });
+                    text.clear();
+                }
+                result = join(result, value);
+                i = j;
+                continue;
+            }
+            text.push(c);
+            i += 1;
+        }
+        if !text.is_empty() || matches!(&result.kind, ExprKind::Str(_)) {
+            result = join(result, Expr { kind: ExprKind::Str(Rc::from(text.as_str())), line });
+        }
+        Ok(result)
+    }
+
     fn looks_like_new(&self, left: &Expr) -> bool {
         if !matches!(left.kind, ExprKind::Ident(_) | ExprKind::Member(_, _)) {
             return false;
@@ -756,7 +815,7 @@ impl<'a> Parser<'a> {
                 "-" => crate::stdlib::is_numeric_type(&first.text) && matches!(self.at(j + 1).kind, Tk::Int | Tk::Float),
                 _ => false,
             },
-            Tk::Eof => false,
+            Tk::Eof | Tk::Template => matches!(next.kind, Tk::Template),
         }
     }
 
@@ -841,6 +900,10 @@ impl<'a> Parser<'a> {
             Tk::Str => {
                 self.pos += 1;
                 return mk(ExprKind::Str(Rc::from(t.text.as_str())));
+            }
+            Tk::Template => {
+                self.pos += 1;
+                return self.template(&t);
             }
             _ => {}
         }
