@@ -102,3 +102,6 @@ Módulos padrão: `@clpp.math` (`pi`, `huge`, `sqrt`, `floor`, `random`...), `@c
 `@clpp.fs`, `@clpp.time` (`now`, `clock`, `sleep`, `date`, `format`) e `@clpp.json` (`parse`, `stringify`, `pretty`). Tipos numéricos: `number`, `float`, `i8`–`i64`, `u8`–`u64`, `f16`, `f32`, `f64`;
 `(Tipo valor)` garante o tipo exato. Veja [docs/reference/stdlib.md](docs/reference/stdlib.md).
 
+## Licença
+
+MIT. Veja [LICENSE](LICENSE).

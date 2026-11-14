@@ -31,6 +31,9 @@
       "include": "#keywords"
     },
     {
+      "include": "#generics"
+    },
+    {
       "include": "#types"
     },
     {
@@ -53,6 +56,9 @@
     },
     {
       "include": "#properties"
+    },
+    {
+      "include": "#field-initializers"
     },
     {
       "include": "#type-names"
@@ -606,13 +612,60 @@
         },
         {
           "match": "[<>]",
-          "name": "keyword.operator.comparison.clpp"
+          "name": "punctuation.definition.typeparameters.clpp"
         }
       ]
     },
     "identifiers": {
       "match": "\\b[A-Za-z_]\\w*\\b",
       "name": "variable.other.readwrite.clpp"
+    },
+    "generics": {
+      "comment": "Type arguments written against a name, e.g. array<number> or Pair<string, number>.",
+      "begin": "(?<=[A-Za-z0-9_])(<)(?=[A-Za-z_][\\w.,\\s<>]*>)",
+      "beginCaptures": {
+        "1": {
+          "name": "punctuation.definition.typeparameters.begin.clpp"
+        }
+      },
+      "end": ">",
+      "endCaptures": {
+        "0": {
+          "name": "punctuation.definition.typeparameters.end.clpp"
+        }
+      },
+      "patterns": [
+        {
+          "include": "#generics"
+        },
+        {
+          "include": "#types"
+        },
+        {
+          "include": "#type-names"
+        },
+        {
+          "match": ",",
+          "name": "punctuation.separator.comma.clpp"
+        },
+        {
+          "match": "\\.",
+          "name": "punctuation.accessor.clpp"
+        },
+        {
+          "match": "\\b[A-Za-z_]\\w*\\b",
+          "name": "entity.name.type.clpp"
+        }
+      ]
+    },
+    "field-initializers": {
+      "comment": "Field names inside an object initializer: Player { Name = \\\"Ada\\\", Health = 50 }.",
+      "match": "(?<=[{,])\\s*([A-Za-z_]\\w*)\\s*(?==(?!=))",
+      "captures": {
+        "1": {
+          "name": "variable.other.property.clpp"
+        }
+      }
     }
   }
 }

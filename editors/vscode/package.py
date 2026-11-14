@@ -84,6 +84,8 @@ def main():
         for f in FILES:
             z.write(HERE / f, f"extension/{f}")
             count += 1
+        z.write(ROOT / "LICENSE", "extension/LICENSE")
+        count += 1
         for folder in FOLDERS:
             for p in sorted((HERE / folder).rglob("*")):
                 if p.is_file():

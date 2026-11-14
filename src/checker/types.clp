@@ -1,3 +1,5 @@
+!
+
 link "../ast/ast.clp" as Ast;
 
 export def TypeDeclarationChecker {

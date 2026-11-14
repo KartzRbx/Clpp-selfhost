@@ -9,7 +9,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -41,3 +41,12 @@ jobs:
 
       - name: VS Code extension
         run: node editors/vscode/test/extension.test.js
+
+      - name: Package the VS Code extension for this platform
+        run: python editors/vscode/package.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: clpp-vsix-${{ matrix.os }}
+          path: editors/vscode/*.vsix
+          if-no-files-found: error
