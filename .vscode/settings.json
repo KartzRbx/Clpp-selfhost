@@ -19,7 +19,7 @@
     "files.autoSaveDelay": 1000,
     "files.trimTrailingWhitespace": true,
     "files.insertFinalNewline": true,
-    "workbench.colorTheme": "paddy-dark",
+    "workbench.colorTheme": "italian-pizza",
     "workbench.iconTheme": "roblox-icons",
     "workbench.startupEditor": "none",
     "workbench.sideBar.location": "left",
@@ -68,5 +68,8 @@
         "**/node_modules": true,
         "**/bower_components": true,
         "**/*.code-search": true
+    },
+    "[clpp]": {
+        "editor.defaultFormatter": "kartzrbx.clpp-dev"
     }
 }

@@ -29,6 +29,9 @@ post(0xFF .: " " .: 0b1010 .: " " .: 1_000_000 .: " " .: 2.5e3)
 post((6 & 3) .: " " .: (6 | 3) .: " " .: (6 ^ 3) .: " " .: (1 shl 4) .: " " .: (256 shr 2))
 post(not true or (1 < 2 and 3 >= 3))
 
+const i32 data = 150000;
+post(data)
+
 do {
     index -= 3
 } while (index > 0)

@@ -1,7 +1,25 @@
 !as SelfHostTests
 
 <<[ The self-hosted parser must parse every file of the compiler and its tests.
-    Paths are relative to the repository root: run `clpp-boot test tests` from there. ]>>
+    Paths are relative to the repository root: run `clpp-boot test tests` from there.
+]>>
+
+<< Comentario tipo 1
+
+<<{
+    !name GetValue
+    !desc Aki cria uma breve descrição
+    !params Aki insere os parametros
+    !return Insere o return da função
+    !example Aki insere exemplo
+}>>
+
+<<[
+    Comentário de mais de uma linha
+    Mase em forma de comentário normal
+    :>
+]>>
+
 
 link @clpp.fs as Fs
 link "../../src/lexer/lexer.clp" as Lexing

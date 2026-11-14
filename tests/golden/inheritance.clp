@@ -19,7 +19,7 @@ def Entity {
 }
 
 def Mage:Entity {
-    number Mana = 50
+    number Mana
 
     void Hit(number damage) {
         << A mage shields with mana first.
@@ -31,7 +31,12 @@ def Mage:Entity {
             push(@Log, `hit ${damage}`)
         }
     }
+
+
 }
+
+
+
 
 def Archmage:Mage {
     number Health = 150

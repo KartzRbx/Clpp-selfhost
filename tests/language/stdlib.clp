@@ -75,6 +75,7 @@ Expect(len(Table.range(0, 5)) == 5 and Table.fill(3, "x")[2] == "x", "range / fi
 << ---------------------------------------------------------------- sized numbers
 u8 small = 250
 small += 10
+
 Expect(small == 4, "u8 wraps around on arithmetic: " .: small)
 i8 signed = 127
 signed += 1
