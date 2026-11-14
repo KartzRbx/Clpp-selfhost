@@ -23,6 +23,12 @@ Static type checker added (gradual: unknown types never raise errors) in `clpp-b
 and the editor; `tests/typecheck/*.fail.clp` pin the expected errors. CI runs every suite on
 Linux and Windows (`.github/workflows/ci.yml`).
 
+`match` (with enum exhaustiveness checks) and lambdas `func (T x) -> R { }` (captures by
+value) work in the interpreter, the self-hosted compiler and the VM.
+
+Generics (`def Box<T>`, `template<typename T>`, `Box<number> { }`) and `optional<T>` with
+null narrowing (`if (x != null)`, `guard (x != null)`) are checked by the type checker.
+
 Still open, in order: type checking inside the self-hosted compiler, generics, `match`, lambdas, buffers, concurrency,
 package manager, debugger.
 
@@ -58,10 +64,10 @@ compile itself. `clpp-boot` is that stage 0.
 | `for (T item in values)`, `break`, `continue` | done | Parser. |
 | `guard (cond) else { }` | done | Parser. |
 | `try` / `catch` | done | Parser. The compiler's own tests use it. |
-| `match` with exhaustiveness | planned | See section 10. |
+| `match` with exhaustiveness | done | See section 10. |
 | `const`, `auto`, `export` | done | Parser. |
 | Functions with typed parameters and return type | done | Parser. |
-| Lambdas `func (T x) -> R { }` | planned | |
+| Lambdas `func (T x) -> R { }` | done | |
 | Ternary `?:`, compound assignment, `@this`, `::`, `Type { Field = v }` | done | Parser. |
 | Top-level statements run in order (no `main`) | planned | Runtime behaviour. |
 
@@ -182,13 +188,13 @@ The CL++ column describes this repository, not the official C++20 checkout.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Memory model | ownership | GC | GC + refcount | GC | RAII / manual | ❌ | Decide: tracing GC, refcount + cycle collector, or arenas. `clpp-boot` uses refcounting and leaks cycles. |
 | Static types | ✅ | ✅ | hints only | ✅ | ✅ | 🟡 | Real type checker (stage C). |
-| Generics | ✅ | ✅ | ✅ | ✅ | templates | ❌ | `def Box<T>`, generic functions, bounds. |
+| Generics | ✅ | ✅ | ✅ | ✅ | templates | ✅ | `def Box<T>`, generic functions, bounds. |
 | Interfaces / traits | traits | interfaces | protocols | interfaces | concepts | ❌ | A contract mechanism: structural like Go/TS fits the existing `&` types. |
 | Enums with data | ✅ | unions | ❌ | ❌ | `variant` | 🟡 | Payload unions `def Shape = Circle \| Square` + `match`. |
-| Pattern matching | ✅ | narrowing | `match` | `switch` | ❌ | ❌ | `match` with exhaustiveness. |
-| Null safety | `Option` | strict null | ❌ | ❌ | `optional` | 🟡 | `optional<T>` + flow narrowing. |
+| Pattern matching | ✅ | narrowing | `match` | `switch` | ❌ | ✅ | `match` with exhaustiveness. |
+| Null safety | `Option` | strict null | ❌ | ❌ | `optional` | ✅ | `optional<T>` + flow narrowing. |
 | Error handling | `Result` + `?` | exceptions | exceptions | error values | exceptions | 🟡 | `try`/`catch` exists; add `Result<T, E>` + `?`. Errors carry only a string today. |
-| Closures | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | `func (T x) -> R { }` capturing variables. |
+| Closures | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | `func (T x) -> R { }` capturing variables. |
 | Iterators / generators | ✅ | ✅ | ✅ | range-over-func | ranges | 🟡 | `for-in` only over arrays/dicts/strings; add an iterator protocol. |
 | String API | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | split, trim, contains, replace, format, upper/lower, char codes. |
 | String interpolation | `format!` | template | f-strings | `Sprintf` | `std::format` | 🟡 | Lexer has `` `${}` ``; parser and `clpp-boot` don't evaluate it. |

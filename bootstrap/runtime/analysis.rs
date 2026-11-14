@@ -459,7 +459,9 @@ pub fn build_index(path: &Path, program: &Program, text: &str) -> FileIndex {
             Item::Def { decl, exported } => {
                 let mut sym = leaf(decl.pos, &decl.name, SymKind::Def, String::new(), *exported, None);
                 sym.end_line = decl.end_line;
-                let mut lines = vec![format!("def {} {{", decl.name)];
+                sym.params = decl.type_params.clone();
+                let generic = if decl.type_params.is_empty() { String::new() } else { format!("<{}>", decl.type_params.join(", ")) };
+                let mut lines = vec![format!("def {}{} {{", decl.name, generic)];
                 for f in &decl.fields {
                     lines.push(format!("    {} {}", f.ty.render(), f.name));
                     sym.children.push(leaf(
@@ -685,6 +687,15 @@ impl<'a> Checker<'a> {
                 self.scopes.push(scope);
                 self.block(body);
                 self.scopes.pop();
+            }
+            StmtKind::Match(subject, arms) => {
+                self.expr(subject);
+                for arm in arms {
+                    for p in arm.patterns.iter().flatten() {
+                        self.expr(p);
+                    }
+                    self.block(&arm.body);
+                }
             }
             StmtKind::Guard(c, b) => {
                 self.expr(c);
@@ -960,6 +971,15 @@ impl<'a> Checker<'a> {
                 self.expr(b);
                 self.expr(c);
             }
+            ExprKind::Lambda(decl) => {
+                let mut scope = HashMap::new();
+                for (name, ty) in decl.params.iter().zip(&decl.param_types) {
+                    scope.insert(name.clone(), Some(ty.render()));
+                }
+                self.scopes.push(scope);
+                self.block(&decl.body);
+                self.scopes.pop();
+            }
             ExprKind::Typed(ty, inner) => {
                 self.expr(inner);
                 self.check_typed(ty, inner, e.line);
@@ -1032,6 +1052,11 @@ pub fn locals_at(program: &Program, index: &FileIndex, line: usize) -> Vec<Sym> 
                     walk(body, line, out, make);
                 }
                 StmtKind::Block(b) | StmtKind::While(_, b) | StmtKind::DoWhile(b, _) | StmtKind::Guard(_, b) => walk(b, line, out, make),
+                StmtKind::Match(_, arms) => {
+                    for arm in arms {
+                        walk(&arm.body, line, out, make);
+                    }
+                }
                 StmtKind::If(_, a, b) => {
                     walk(a, line, out, make);
                     if let Some(b) = b {

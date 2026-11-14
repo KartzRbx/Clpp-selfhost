@@ -85,7 +85,8 @@ fn canon(written: &str, ctx: &FileIndex) -> String {
     let (base, args) = split_type(written.trim());
     let args: Vec<String> = args.iter().map(|a| canon(a, ctx)).collect();
     let base = match base.as_str() {
-        "number" | "float" | "string" | "bool" | "void" | "auto" | "array" | "dictionary" | "i8" | "i16" | "i32" | "i64"
+        _ if base.contains('@') => base, // already canonical (substituted type argument)
+        "number" | "float" | "string" | "bool" | "void" | "auto" | "array" | "dictionary" | "optional" | "i8" | "i16" | "i32" | "i64"
         | "u8" | "u16" | "u32" | "u64" | "f16" | "f32" | "f64" => base,
         _ => match base.split_once('.') {
             Some((alias, name)) => match ctx.links.iter().find(|l| l.alias == alias && !l.native) {
@@ -113,14 +114,31 @@ fn canon(written: &str, ctx: &FileIndex) -> String {
 }
 
 /// Can a value of type `actual` be stored where `target` is expected?
+fn optional_inner(t: &str) -> Option<String> {
+    let (base, args) = split_type(t);
+    if base == "optional" {
+        Some(args.first().cloned().unwrap_or_else(|| UNKNOWN.into()))
+    } else {
+        None
+    }
+}
+
 pub fn assignable(target: &str, actual: &str) -> bool {
     if target == UNKNOWN || actual == UNKNOWN || target == actual {
         return true;
     }
+    if let Some(inner) = optional_inner(target) {
+        return actual == "null"
+            || assignable(&inner, actual)
+            || optional_inner(actual).map(|a| assignable(&inner, &a)).unwrap_or(false);
+    }
+    if optional_inner(actual).is_some() {
+        return false; // may be null: check with `!= null` first
+    }
     if is_numeric(target) && is_int(actual) {
         return true; // whole numbers widen and sized types convert
     }
-    
+
     if is_float(target) && is_float(actual) {
         return true;
     }
@@ -129,6 +147,9 @@ pub fn assignable(target: &str, actual: &str) -> bool {
     }
     let (tb, ta) = split_type(target);
     let (ab, aa) = split_type(actual);
+    if tb == ab && (ta.is_empty() || aa.is_empty()) {
+        return true; // `Box { }` carries no type arguments: treat them as unknown
+    }
     if tb != ab || ta.len() != aa.len() {
         return false;
     }
@@ -136,6 +157,9 @@ pub fn assignable(target: &str, actual: &str) -> bool {
 }
 
 fn conversion_help(target: &str, actual: &str) -> Option<String> {
+    if optional_inner(actual).is_some() {
+        return Some("the value may be null: check it first, for example: if (value != null) { ... }".into());
+    }
     if is_numeric(target) && actual == "string" {
         return Some("convert the text with Text.toNumber(...)".into());
     }
@@ -149,6 +173,31 @@ fn conversion_help(target: &str, actual: &str) -> Option<String> {
         return Some("compare explicitly, for example: value != 0".into());
     }
     None
+}
+
+/// Replaces whole-word type parameters (`T` in `array<T>`) by arguments.
+fn substitute(t: &str, params: &[String], args: &[String]) -> String {
+    let mut out = String::new();
+    let mut word = String::new();
+    let flush = |word: &mut String, out: &mut String| {
+        if !word.is_empty() {
+            match params.iter().position(|p| p == word) {
+                Some(i) => out.push_str(&args[i]),
+                None => out.push_str(word),
+            }
+            word.clear();
+        }
+    };
+    for c in t.chars() {
+        if c.is_alphanumeric() || c == '_' {
+            word.push(c);
+        } else {
+            flush(&mut word, &mut out);
+            out.push(c);
+        }
+    }
+    flush(&mut word, &mut out);
+    out
 }
 
 pub struct TypeChecker<'a> {
@@ -301,6 +350,29 @@ impl<'a> TypeChecker<'a> {
         self.scopes.pop();
     }
 
+    /// Variables that `x != null` (possibly joined by `and`) proves are not null.
+    fn narrowed(&self, cond: &Expr) -> Vec<(String, String)> {
+        match &cond.kind {
+            ExprKind::Binary(op, a, b) if op == "and" => {
+                let mut v = self.narrowed(a);
+                v.extend(self.narrowed(b));
+                v
+            }
+            ExprKind::Binary(op, a, b) if op == "!=" => {
+                let name = match (&a.kind, &b.kind) {
+                    (ExprKind::Ident(n), ExprKind::Null) | (ExprKind::Null, ExprKind::Ident(n)) => n,
+                    _ => return Vec::new(),
+                };
+                let current = self.local(name).or_else(|| self.globals.get(name).cloned());
+                match current.as_deref().and_then(optional_inner) {
+                    Some(inner) => vec![(name.clone(), inner)],
+                    None => Vec::new(),
+                }
+            }
+            _ => Vec::new(),
+        }
+    }
+
     fn condition(&mut self, e: &Expr, what: &str) {
         let t = self.expr(e, None);
         if t != UNKNOWN && t != "bool" {
@@ -327,22 +399,71 @@ impl<'a> TypeChecker<'a> {
             StmtKind::Block(b) => self.block(b),
             StmtKind::If(c, then, otherwise) => {
                 self.condition(c, "if");
+                let narrowed = self.narrowed(c);
+                self.scopes.push(narrowed.into_iter().collect());
                 self.block(then);
+                self.scopes.pop();
                 if let Some(o) = otherwise {
                     self.block(o);
                 }
             }
             StmtKind::While(c, b) => {
                 self.condition(c, "while");
+                let narrowed = self.narrowed(c);
+                self.scopes.push(narrowed.into_iter().collect());
                 self.block(b);
+                self.scopes.pop();
             }
             StmtKind::DoWhile(b, c) => {
                 self.block(b);
                 self.condition(c, "do-while");
             }
+            StmtKind::Match(subject, arms) => {
+                let st = self.expr(subject, None);
+                let mut covered: Vec<String> = Vec::new();
+                let mut wildcard = false;
+                for arm in arms {
+                    for p in &arm.patterns {
+                        match p {
+                            None => wildcard = true,
+                            Some(p) => {
+                                let pt = self.expr(p, Some(&st));
+                                if !assignable(&st, &pt) && !assignable(&pt, &st) {
+                                    self.error(p.line, "", format!("match case is {}, but the value is {}", show(&pt), show(&st)), None);
+                                }
+                                if let ExprKind::Scope(_, variant) = &p.kind {
+                                    covered.push(variant.clone());
+                                }
+                            }
+                        }
+                    }
+                    self.block(&arm.body);
+                }
+                // Enums must be covered completely unless there is a `_` case.
+                if !wildcard {
+                    if let Some(index) = self.index_for(&st) {
+                        let name = st.split_once('@').map(|(n, _)| n).unwrap_or("");
+                        if let Some(e) = index.find(name).filter(|e| e.kind == SymKind::Enum) {
+                            let missing: Vec<String> = e.children.iter().filter(|v| !covered.contains(&v.name)).map(|v| format!("{}::{}", name, v.name)).collect();
+                            if !missing.is_empty() {
+                                self.error(
+                                    s.line,
+                                    "match",
+                                    format!("match does not cover {}", missing.join(", ")),
+                                    Some(format!("add the missing cases, or a default case: _ => ...")),
+                                );
+                            }
+                        }
+                    }
+                }
+            }
             StmtKind::Guard(c, b) => {
                 self.condition(c, "guard");
                 self.block(b);
+                // After `guard (x != null) else { ... }`, x is known not to be null.
+                for (name, t) in self.narrowed(c) {
+                    self.declare(&name, t);
+                }
             }
             StmtKind::ForIn { name, ty, iterable, body, .. } => {
                 let it = self.expr(iterable, None);
@@ -459,9 +580,28 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn member_of(&mut self, base_type: &str, member: &str, line: usize) -> Option<(Sym, &'a FileIndex)> {
+        if optional_inner(base_type).is_some() {
+            self.error(
+                line,
+                member,
+                format!("'{}' is read from a value that may be null ({})", member, show(base_type)),
+                Some("check it first: if (value != null) { ... } or guard (value != null) else { return }".into()),
+            );
+            return None;
+        }
         let (def, index) = self.def_sym(base_type)?;
         match def.children.iter().find(|c| c.name == member) {
-            Some(m) => Some((m.clone(), index)),
+            Some(m) => {
+                let mut m = m.clone();
+                // Box<number>.Value: replace the def's type parameters by the arguments.
+                let args = split_type(base_type).1;
+                if !def.params.is_empty() && args.len() == def.params.len() {
+                    let subst = |t: &str| substitute(t, &def.params, &args);
+                    m.ty = m.ty.as_deref().map(subst);
+                    m.params = m.params.iter().map(|t| subst(t)).collect();
+                }
+                Some((m, index))
+            }
             None => {
                 let help = crate::diag::closest(member, def.children.iter().map(|c| c.name.as_str())).map(|c| format!("did you mean '{}'?", c));
                 self.error(line, member, format!("{} has no member '{}'", def.name, member), help);
@@ -501,6 +641,7 @@ impl<'a> TypeChecker<'a> {
                     _ => UNKNOWN.into(),
                 }
             }
+
             ExprKind::Scope(base, _) => match &base.kind {
                 ExprKind::Ident(n) => canon(n, self.index),
                 ExprKind::Member(inner, n) => match &inner.kind {
@@ -509,6 +650,7 @@ impl<'a> TypeChecker<'a> {
                 },
                 _ => UNKNOWN.into(),
             },
+            
             ExprKind::Index(base, key) => {
                 let bt = self.expr(base, None);
                 let kt = self.expr(key, None);
@@ -650,6 +792,18 @@ impl<'a> TypeChecker<'a> {
                     }
                 }
                 t
+            }
+            ExprKind::Lambda(decl) => {
+                let saved = self.return_type.replace(canon(&decl.ret.render(), self.index));
+                let mut scope = HashMap::new();
+                for (name, ty) in decl.params.iter().zip(&decl.param_types) {
+                    scope.insert(name.clone(), canon(&ty.render(), self.index));
+                }
+                self.scopes.push(scope);
+                self.block(&decl.body);
+                self.scopes.pop();
+                self.return_type = saved;
+                "function".into()
             }
             ExprKind::Typed(ty, inner) => {
                 self.expr(inner, None);

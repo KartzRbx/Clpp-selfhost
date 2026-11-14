@@ -40,6 +40,8 @@ pub enum Value {
     Object(Rc<Object>),
     Enum(u32, u32),
     Range(i64, i64),
+    /// Lambda: function index and the values it captured.
+    Closure(u32, Rc<Vec<Value>>),
 }
 
 pub struct Object {
@@ -64,6 +66,7 @@ impl Value {
             Value::Object(o) => plain(&p.defs[o.def as usize].name).to_string(),
             Value::Enum(e, _) => plain(&p.enums[*e as usize].name).to_string(),
             Value::Range(..) => "range".into(),
+            Value::Closure(..) => "function".into(),
         }
     }
 }
@@ -136,16 +139,20 @@ fn display(p: &Program, v: &Value, out: &mut String, depth: usize) {
             }
             out.push('}');
         }
+        
         Value::Object(o) => {
             let _ = write!(out, "{} {{...}}", plain(&p.defs[o.def as usize].name));
         }
+
         Value::Enum(e, i) => {
             let info = &p.enums[*e as usize];
             let _ = write!(out, "{}::{}", plain(&info.name), info.variants[*i as usize]);
         }
+
         Value::Range(a, b) => {
             let _ = write!(out, "{} .. {}", a, b);
         }
+        Value::Closure(..) => out.push_str("function"),
     }
 }
 
@@ -259,6 +266,10 @@ pub enum Ins {
     Fail(Rc<str>),
     /// dst, src, type name, exact: `(Type value)` and typed variables.
     Conv(u32, u32, Rc<str>, bool),
+    /// dst, function, base of captured values, count.
+    Closure(u32, u32, u32, u32),
+    /// dst, register holding the closure, args base, arg count.
+    CallV(u32, u32, u32, u32),
 }
 
 pub struct Func {
@@ -639,6 +650,12 @@ pub fn load(source: &str) -> Result<Program, String> {
                     "ENDTRY" => Ins::EndTry,
                     "ITERLIST" => Ins::IterList(reg(arg(1)?).map_err(err)?, reg(arg(2)?).map_err(err)?),
                     "FAIL" => Ins::Fail(Rc::from(unquote(arg(1)?).map_err(err)?.as_str())),
+                    "CLOSURE" => {
+                        let name = arg(2)?;
+                        let fi = *func_index.get(name).ok_or_else(|| err(format!("unknown function '{}'", name)))?;
+                        Ins::Closure(reg(arg(1)?).map_err(err)?, fi, reg(arg(3)?).map_err(err)?, num(arg(4)?).map_err(err)?)
+                    }
+                    "CALLV" => Ins::CallV(reg(arg(1)?).map_err(err)?, reg(arg(2)?).map_err(err)?, reg(arg(3)?).map_err(err)?, num(arg(4)?).map_err(err)?),
                     "CONV" => Ins::Conv(reg(arg(1)?).map_err(err)?, reg(arg(2)?).map_err(err)?, Rc::from(arg(3)?), arg(4)? == "1"),
                     other => return Err(err(format!("unknown instruction '{}'", other))),
                 }
@@ -805,12 +822,24 @@ impl<'p> Vm<'p> {
                         cfunc
                     } else {
                         let def = &p.defs[obj.def as usize];
-                        let f = *def
-                            .methods
-                            .get(&**name)
-                            .ok_or_else(|| format!("{} has no method '{}'", def.name, name))?;
-                        cache.set((obj.def, f));
-                        f
+                        match def.methods.get(&**name) {
+                            Some(f) => {
+                                cache.set((obj.def, *f));
+                                *f
+                            }
+                            None => {
+                                let slot = def.fields.iter().position(|f| f == &**name).ok_or_else(|| format!("{} has no method '{}'", plain(&def.name), name))?;
+                                let field = obj.fields.borrow()[slot].clone();
+                                let (f, captured) = match field {
+                                    Value::Closure(f, captured) => (f, captured),
+                                    other => return self.fail(format!("field '{}' is {}, not a function", name, other.type_name(p))),
+                                };
+                                let mut args: Vec<Value> = captured.as_ref().clone();
+                                args.extend_from_slice(&self.regs[r(*b)..r(*b) + *n as usize]);
+                                self.push_frame(f, args, r(*a))?;
+                                continue;
+                            }
+                        }
                     };
                     let mut args = Vec::with_capacity(*n as usize + 1);
                     args.push(Value::Object(obj));
@@ -904,6 +933,19 @@ impl<'p> Vm<'p> {
                     self.regs[r(*a)] = Value::Array(Rc::new(RefCell::new(items)));
                 }
                 Ins::Fail(m) => return self.fail(m.to_string()),
+                Ins::Closure(a, f, b, n) => {
+                    let captured = self.regs[r(*b)..r(*b) + *n as usize].to_vec();
+                    self.regs[r(*a)] = Value::Closure(*f, Rc::new(captured));
+                }
+                Ins::CallV(a, c, b, n) => {
+                    let (f, captured) = match &self.regs[r(*c)] {
+                        Value::Closure(f, captured) => (*f, captured.clone()),
+                        v => return self.fail(format!("{} is not callable", v.type_name(p))),
+                    };
+                    let mut args: Vec<Value> = captured.as_ref().clone();
+                    args.extend_from_slice(&self.regs[r(*b)..r(*b) + *n as usize]);
+                    self.push_frame(f, args, r(*a))?;
+                }
                 Ins::Conv(a, b, ty, exact) => {
                     let v = convert(p, &self.regs[r(*b)], ty, *exact)?;
                     self.regs[r(*a)] = v;

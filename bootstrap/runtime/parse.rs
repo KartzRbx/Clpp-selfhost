@@ -198,6 +198,11 @@ impl<'a> Parser<'a> {
         }
 
         let exported = self.eat_word("export");
+        // `template<typename T> T First(array<T> values)`: type parameters only
+        // matter to the type checker.
+        if self.eat_word("template") {
+            self.type_params()?;
+        }
 
         if self.eat_word("def") {
             return self.def_item(exported);
@@ -244,11 +249,27 @@ impl<'a> Parser<'a> {
         Ok(Item::Stmt(self.statement()?))
     }
 
+    /// `<T, U: Bound>` or `<typename T>`.
+    fn type_params(&mut self) -> PResult<Vec<String>> {
+        self.expect_sym("<")?;
+        let mut names = Vec::new();
+        loop {
+            self.eat_word("typename");
+            names.push(self.expect_ident("type parameter name")?);
+            if self.eat_sym(":") {
+                self.type_name()?;
+            }
+            if !self.eat_sym(",") {
+                break;
+            }
+        }
+        self.expect_sym(">")?;
+        Ok(names)
+    }
+
     fn def_item(&mut self, exported: bool) -> PResult<Item> {
         let (name, pos) = self.ident_at("type name after 'def'")?;
-        if self.is_sym("<") {
-            return self.error("generic def types are not supported by clpp-boot yet");
-        }
+        let type_params = if self.is_sym("<") { self.type_params()? } else { Vec::new() };
         if self.eat_sym("=") {
             self.skip_type_expr()?;
             self.terminator("type declaration")?;
@@ -283,7 +304,7 @@ impl<'a> Parser<'a> {
         let end_line = self.tok().line;
         self.expect_sym("}")?;
         self.eat_sym(";");
-        Ok(Item::Def { decl: Rc::new(DefDecl { name, pos, end_line, fields, methods }), exported })
+        Ok(Item::Def { decl: Rc::new(DefDecl { name, type_params, pos, end_line, fields, methods }), exported })
     }
 
     fn function_rest(&mut self, name: String, ret: TypeName, line: usize, pos: Pos) -> PResult<Rc<FnDecl>> {
@@ -467,6 +488,42 @@ impl<'a> Parser<'a> {
             let iterable = self.expr(0)?;
             self.expect_sym(")")?;
             StmtKind::ForIn { name, ty, iterable, body: self.block()?, pos }
+        } else if self.eat_word("match") {
+            let subject = self.condition("match")?;
+            self.expect_sym("{")?;
+            let mut arms = Vec::new();
+            while !self.is_sym("}") {
+                if self.at_end() {
+                    return self.error("expected '}' to close match");
+                }
+                if self.eat_sym(",") || self.eat_sym(";") {
+                    continue;
+                }
+                let arm_line = self.tok().line;
+                let mut patterns = Vec::new();
+                loop {
+                    if self.is_word("_") {
+                        self.pos += 1;
+                        patterns.push(None);
+                    } else {
+                        patterns.push(Some(self.expr(3)?));
+                    }
+                    if !self.eat_sym(",") {
+                        break;
+                    }
+                }
+                self.expect_sym("=>")?;
+                let body = if self.is_sym("{") {
+                    self.block()?
+                } else {
+                    let stmt_line = self.tok().line;
+                    let e = self.expr(0)?;
+                    vec![Stmt { kind: StmtKind::Expr(e), line: stmt_line }]
+                };
+                arms.push(MatchArm { patterns, body, line: arm_line });
+            }
+            self.expect_sym("}")?;
+            StmtKind::Match(subject, arms)
         } else if self.eat_word("guard") {
             let cond = self.condition("guard")?;
             self.expect_word("else")?;
@@ -703,6 +760,28 @@ impl<'a> Parser<'a> {
         }
     }
 
+    fn looks_like_generic_new(&self) -> bool {
+        if self.tok().kind != Tk::Ident || !self.is_sym_at(self.pos + 1, "<") {
+            return false;
+        }
+        let mut j = self.pos + 1;
+        let mut depth = 0i32;
+        loop {
+            if !self.is_type_token(j) {
+                return false;
+            }
+            if self.is_sym_at(j, "<") {
+                depth += 1;
+            } else if self.is_sym_at(j, ">") {
+                depth -= 1;
+                if depth == 0 {
+                    return self.is_sym_at(j + 1, "{") && self.at(j + 1).line == self.at(j).line;
+                }
+            }
+            j += 1;
+        }
+    }
+
     fn looks_like_typed_collection(&self) -> bool {
         if self.tok().kind != Tk::Ident || !self.is_sym_at(self.pos + 1, "<") {
             return false;
@@ -775,6 +854,7 @@ impl<'a> Parser<'a> {
                 self.pos += 1;
                 return mk(ExprKind::Member(Box::new(Expr { kind: ExprKind::This, line }), name));
             }
+
             return self.error("expected 'this' or a member name after '@'");
         }
         if self.is_sym("(") && self.looks_like_typed_expr() {
@@ -782,11 +862,13 @@ impl<'a> Parser<'a> {
             let ty = self.type_name()?;
             let value = self.expr(0)?;
             self.expect_sym(")")?;
+
             return mk(ExprKind::Typed(ty, Box::new(value)));
         }
         if self.eat_sym("(") {
             let e = self.expr(0)?;
             self.expect_sym(")")?;
+
             return Ok(e);
         }
         if self.is_sym("{") {
@@ -806,10 +888,34 @@ impl<'a> Parser<'a> {
                     self.pos += 1;
                     return mk(ExprKind::Null);
                 }
-                "func" | "match" => {
-                    return self.error(&format!("'{}' is not supported by clpp-boot yet", t.text));
+                "func" => {
+                    let pos = self.here();
+                    self.pos += 1;
+                    self.expect_sym("(")?;
+                    let mut params = Vec::new();
+                    let mut param_types = Vec::new();
+                    if !self.is_sym(")") {
+                        loop {
+                            param_types.push(self.type_name()?);
+                            params.push(self.expect_ident("parameter name")?);
+                            if !self.eat_sym(",") {
+                                break;
+                            }
+                        }
+                    }
+                    self.expect_sym(")")?;
+                    let ret = if self.eat_sym("->") { self.type_name()? } else { TypeName { base: "void".into(), args: Vec::new() } };
+                    let body = self.block()?;
+                    let end_line = self.toks[self.pos - 1].line;
+                    let decl = FnDecl { name: "<lambda>".into(), params, param_types, ret, body, line, pos, end_line };
+                    return mk(ExprKind::Lambda(Rc::new(decl)));
                 }
                 _ => {}
+            }
+            if self.looks_like_generic_new() {
+                // `Box<number> { Value = 1 }`: the type arguments are for the checker.
+                self.type_name()?;
+                return mk(ExprKind::Ident(t.text.clone()));
             }
             if self.looks_like_typed_collection() {
                 let ty = self.type_name()?;
@@ -845,6 +951,7 @@ impl<'a> Parser<'a> {
                 if self.at(j).kind == Tk::Eof {
                     break false;
                 }
+
                 if self.is_sym_at(j, "[") {
                     depth += 1;
                 } else if self.is_sym_at(j, "]") {
@@ -853,6 +960,7 @@ impl<'a> Parser<'a> {
                         break self.is_sym_at(j + 1, "=");
                     }
                 }
+                
                 j += 1;
             }
         } else {

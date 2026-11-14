@@ -65,6 +65,7 @@ export def Generator {
     number Next
     number MaxRegisters
     number LabelCount
+    number LambdaCount
     number TryDepth
     number LastLine
     bool InMethod
@@ -598,6 +599,8 @@ export def Generator {
             @Mark(ok)
         } else if (kind == Ast.NodeKind::TryStatement) {
             @Try(node, mark)
+        } else if (kind == Ast.NodeKind::MatchStatement) {
+            @Match(node, mark)
         } else if (kind == Ast.NodeKind::BreakStatement or kind == Ast.NodeKind::ContinueStatement) {
             if (len(@Loops) == 0) {
                 @Fail(node, "'" .: node.Name .: "' outside of a loop")
@@ -694,6 +697,133 @@ export def Generator {
         @Mark(next)
         @Emit("ADD r" .: index .: " r" .: index .: " r" .: one)
         @Emit("JMP " .: start)
+        @Mark(done)
+        @Next = mark
+    }
+
+    << A lambda becomes its own function whose first parameters are the
+    << captured locals (by value; objects stay shared), then its own parameters.
+    void Lambda(Ast.Node node, number target) {
+        array<string> names = array<string>()
+        array<number> registers = array<number>()
+        array<string> types = array<string>()
+        number depth = len(@Scopes) - 1
+        while (depth >= 0) {
+            Scope scope = @Scopes[depth]
+            number i = len(scope.Names) - 1
+            while (i >= 0) {
+                if (find(names, scope.Names[i]) < 0) {
+                    push(names, scope.Names[i])
+                    push(registers, scope.Registers[i])
+                    push(types, scope.Types[i])
+                }
+                i -= 1
+            }
+            depth -= 1
+        }
+
+        bool method = @InMethod
+        array<string> savedBody = @Body
+        array<Scope> savedScopes = @Scopes
+        array<Loop> savedLoops = @Loops
+        number savedNext = @Next
+        number savedMax = @MaxRegisters
+        number savedTry = @TryDepth
+        number savedLine = @LastLine
+        bool savedMain = @InMain
+
+        @LambdaCount += 1
+        string name = @Q("lambda" .: @LambdaCount)
+        @BeginFunction(method, false)
+        number parameters = 0
+        if (method) {
+            @Alloc()
+            parameters = 1
+        }
+        number k = 0
+        while (k < len(names)) {
+            @DeclareTyped(names[k], @Alloc(), types[k])
+            parameters += 1
+            k += 1
+        }
+        for (Ast.Node child in node.Children) {
+            if (child.Kind == Ast.NodeKind::Parameter) {
+                @Declare(child.Name, @Alloc())
+                parameters += 1
+            }
+        }
+        @TrackLine(node)
+        Ast.Node body = node.Children[len(node.Children) - 1]
+        for (Ast.Node statement in body.Children) {
+            @Statement(statement)
+        }
+        @EndFunction(name, parameters)
+
+        @Body = savedBody
+        @Scopes = savedScopes
+        @Loops = savedLoops
+        @Next = savedNext
+        @MaxRegisters = savedMax
+        @TryDepth = savedTry
+        @LastLine = savedLine
+        @InMain = savedMain
+        @InMethod = method
+
+        number base = @Next
+        number count = len(names)
+        number offset = 0
+        if (method) {
+            count += 1
+            offset = 1
+        }
+        k = 0
+        while (k < count) {
+            @Alloc()
+            k += 1
+        }
+        if (method) {
+            @Emit("MOVE r" .: base .: " r0")
+        }
+        k = 0
+        while (k < len(names)) {
+            @Emit("MOVE r" .: (base + offset + k) .: " r" .: registers[k])
+            k += 1
+        }
+        @Emit("CLOSURE r" .: target .: " " .: name .: " r" .: base .: " " .: count)
+    }
+
+    << The first arm with a pattern equal to the value runs; `_` always matches.
+    void Match(Ast.Node node, number mark) {
+        number subject = @Alloc()
+        @Expression(node.Children[0], subject)
+        string done = @NewLabel()
+        number index = 1
+        while (index < len(node.Children)) {
+            Ast.Node arm = node.Children[index]
+            string body = @NewLabel()
+            string next = @NewLabel()
+            number p = 0
+            while (p < len(arm.Children) - 1) {
+                Ast.Node pattern = arm.Children[p]
+                if (pattern.Kind == Ast.NodeKind::IdentifierExpression and pattern.Value == "wildcard") {
+                    @Emit("JMP " .: body)
+                } else {
+                    number patternMark = @Next
+                    number value = @Operand(pattern)
+                    number test = @Alloc()
+                    @Emit("EQ r" .: test .: " r" .: subject .: " r" .: value)
+                    @Emit("JT r" .: test .: " " .: body)
+                    @Next = patternMark
+                }
+                p += 1
+            }
+            @Emit("JMP " .: next)
+            @Mark(body)
+            @Statement(arm.Children[len(arm.Children) - 1])
+            @Emit("JMP " .: done)
+            @Mark(next)
+            index += 1
+        }
         @Mark(done)
         @Next = mark
     }
@@ -906,6 +1036,8 @@ export def Generator {
             @Convert(target, typeName, @IsLiteralNumber(node.Children[0]))
         } else if (kind == Ast.NodeKind::ObjectConstruction) {
             @Construct(node, target)
+        } else if (kind == Ast.NodeKind::LambdaExpression) {
+            @Lambda(node, target)
         } else {
             @Fail(node, "unsupported expression " .: kind)
         }
@@ -943,10 +1075,17 @@ export def Generator {
         string head = ""
 
         if (callee.Kind == Ast.NodeKind::IdentifierExpression) {
-            if (find(@Functions, callee.Name) >= 0) {
+            if (@Local(callee.Name) >= 0) {
+                << A local holding a lambda.
+                head = "CALLV r" .: target .: " r" .: @Local(callee.Name)
+            } else if (find(@Functions, callee.Name) >= 0) {
                 head = "CALL r" .: target .: " " .: @Q(callee.Name)
             } else if (find(BUILTINS, callee.Name) >= 0 and @Local(callee.Name) < 0) {
                 head = "CALLB r" .: target .: " " .: callee.Name
+            } else if (find(@Globals, callee.Name) >= 0) {
+                number function = @Alloc()
+                @Emit("GETG r" .: function .: " " .: @Q(callee.Name))
+                head = "CALLV r" .: target .: " r" .: function
             } else if (@FindDef(callee.Name).Name != "") {
                 @Fail(node, "use '" .: callee.Name .: " { Field = value }' to create a " .: callee.Name)
             } else {

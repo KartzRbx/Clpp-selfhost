@@ -127,6 +127,8 @@ pub enum Value {
     Builtin(Builtin),
     Module(Rc<Module>),
     Range(i64, i64),
+    /// A lambda with the variables it captured.
+    Closure(Rc<FnDecl>, Rc<Module>, Rc<HashMap<String, Value>>, Option<Rc<Object>>),
 }
 
 impl Value {
@@ -159,6 +161,7 @@ impl Value {
             Value::Builtin(_) => "built-in function".into(),
             Value::Module(m) => format!("module {}", m.name),
             Value::Range(_, _) => "range".into(),
+            Value::Closure(..) => "function".into(),
         }
     }
 }
@@ -184,6 +187,7 @@ fn display(value: &Value, out: &mut String, depth: usize) {
                 out.push_str(&s.text);
             }
         }
+
         Value::Array(items) => {
             if depth > 4 {
                 out.push_str("{...}");
@@ -198,6 +202,7 @@ fn display(value: &Value, out: &mut String, depth: usize) {
             }
             out.push('}');
         }
+
         Value::Dict(entries) => {
             if depth > 4 {
                 out.push_str("{...}");
@@ -215,15 +220,19 @@ fn display(value: &Value, out: &mut String, depth: usize) {
             }
             out.push('}');
         }
+
         Value::Object(o) => {
             let _ = write!(out, "{} {{...}}", o.def.decl.name);
         }
+
         Value::Enum(e, i) => {
             let _ = write!(out, "{}::{}", e.decl.name, e.decl.variants[*i]);
         }
+
         Value::Range(a, b) => {
             let _ = write!(out, "{} .. {}", a, b);
         }
+        
         other => out.push_str(&other.type_name()),
     }
 }
@@ -315,6 +324,8 @@ impl Frame {
 }
 
 pub struct Interp {
+    /// Variables of the lambda about to be called.
+    captured: Option<Rc<HashMap<String, Value>>>,
     modules: HashMap<PathBuf, Rc<Module>>,
     loading: Vec<PathBuf>,
     pub args: Vec<String>,
@@ -325,7 +336,7 @@ const MAX_CALL_DEPTH: usize = 2000;
 
 impl Interp {
     pub fn new(args: Vec<String>) -> Interp {
-        Interp { modules: HashMap::new(), loading: Vec::new(), args, depth: 0 }
+        Interp { captured: None, modules: HashMap::new(), loading: Vec::new(), args, depth: 0 }
     }
 
     pub fn run_file(&mut self, path: &Path) -> Result<(), String> {
@@ -570,6 +581,28 @@ impl Interp {
                         Ok(()) | Err(Flow::Continue) => {}
                         Err(Flow::Break) => break,
                         Err(other) => return Err(other),
+                    }
+                }
+                Ok(())
+            }
+            StmtKind::Match(subject, arms) => {
+                let value = self.eval(frame, subject)?;
+                for arm in arms {
+                    let mut hit = false;
+                    for pattern in &arm.patterns {
+                        hit = match pattern {
+                            None => true,
+                            Some(p) => {
+                                let candidate = self.eval(frame, p)?;
+                                values_equal(&value, &candidate)
+                            }
+                        };
+                        if hit {
+                            break;
+                        }
+                    }
+                    if hit {
+                        return self.exec_block(frame, &arm.body);
                     }
                 }
                 Ok(())
@@ -852,6 +885,16 @@ impl Interp {
                 Ok(Value::dict(values))
             }
             ExprKind::TypedCollection(ty, args) => self.typed_collection(frame, ty, args),
+            ExprKind::Lambda(decl) => {
+                // Capture every visible local by value; objects stay shared.
+                let mut captured = HashMap::new();
+                for scope in &frame.scopes {
+                    for (k, v) in scope {
+                        captured.insert(k.clone(), v.clone());
+                    }
+                }
+                Ok(Value::Closure(decl.clone(), frame.module.clone(), Rc::new(captured), frame.this.clone()))
+            }
             ExprKind::Typed(ty, inner) => {
                 let v = self.eval(frame, inner)?;
                 self.check_type(frame, ty, v, is_literal(inner))
@@ -1026,6 +1069,10 @@ impl Interp {
                 self.call_function(&decl, module, None, args, &label)
             }
             Value::Builtin(b) => self.call_builtin(b, args),
+            Value::Closure(decl, module, captured, this) => {
+                self.captured = Some(captured);
+                self.call_function(&decl, module, this, args, "lambda")
+            }
             Value::Type(info) => fail(format!("use '{} {{ Field = value }}' to construct a def", info.decl.name)),
             other => fail(format!("{} is not callable", other.type_name())),
         }
@@ -1051,8 +1098,15 @@ impl Interp {
             return fail(format!("call depth limit ({}) exceeded in {}", MAX_CALL_DEPTH, label));
         }
         let mut frame = Frame::new(module, this);
+        if let Some(captured) = self.captured.take() {
+            for (name, value) in captured.iter() {
+                frame.scopes[0].insert(name.clone(), value.clone());
+            }
+            frame.scopes.push(HashMap::new());
+        }
+        let params_scope = frame.scopes.len() - 1;
         for (name, value) in decl.params.iter().zip(args) {
-            frame.scopes[0].insert(name.clone(), value);
+            frame.scopes[params_scope].insert(name.clone(), value);
         }
         self.depth += 1;
         let mut result = Ok(Value::Null);

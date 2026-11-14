@@ -1,4 +1,5 @@
 link "../ast/ast.clp" as Ast;
+link @clpp.text as Text
 link "../lexer/token.clp" as TokenModule;
 
 const array<string> NUMERIC_TYPES = array<string>(
@@ -360,6 +361,7 @@ export def Parser {
             or text == "for"
             or text == "guard"
             or text == "try"
+            or text == "match"
             or text == "catch"
             or text == "break"
             or text == "continue"
@@ -610,18 +612,83 @@ export def Parser {
         return typeReference;
     }
 
+    << <T, U: Bound> or <typename T>; returns "T,U".
+    string ParseTypeParameters() {
+        @ExpectText("<", "'<' before type parameters")
+        array<string> names = array<string>()
+        while (true) {
+            @MatchText("typename")
+            push(names, TokenModule.GetLexeme(@Source, @ExpectKind(
+                TokenModule.TokenKind::Identifier,
+                "type parameter name"
+            )))
+            if (@MatchKind(TokenModule.TokenKind::Colon)) {
+                @ParseTypeName()
+            }
+            if (not @MatchKind(TokenModule.TokenKind::Comma)) {
+                break
+            }
+        }
+        @ExpectText(">", "'>' after type parameters")
+        string joined = ""
+        for (string typeName in names) {
+            if (joined != "") {
+                joined = joined .: ","
+            }
+            joined = joined .: typeName
+        }
+        return joined
+    }
+
+    << Box<number> { ... }: a generic type followed by an object body.
+    bool LooksLikeGenericConstruction() {
+        if (
+            not @IsTypeWord(@Current)
+            or @Current + 1 >= len(@Tokens)
+            or @Text(@Current + 1) != "<"
+        ) {
+            return false
+        }
+        number cursor = @Current + 1
+        number depth = 0
+        while (cursor < len(@Tokens)) {
+            string text = @Text(cursor)
+            if (text == "<") {
+                depth += 1
+            } else if (text == ">") {
+                depth -= 1
+                if (depth == 0) {
+                    return cursor + 1 < len(@Tokens)
+                        and @Tokens[cursor + 1].Kind == TokenModule.TokenKind::LeftBrace
+                        and @Tokens[cursor + 1].Line == @Tokens[cursor].Line
+                }
+            } else if (not @IsTypeWord(cursor) and text != "." and text != ",") {
+                return false
+            }
+            cursor += 1
+        }
+        return false
+    }
+
     Ast.Node ParseTypeDeclaration(bool isExported, number startToken) {
         @this.ExpectText("def", "'def' before type name");
         TokenModule.Token name = @this.ExpectKind(
             TokenModule.TokenKind::Identifier,
             "type name after 'def'"
         );
-        if (@CheckKind(TokenModule.TokenKind::LeftBrace)) {
-            return @ParseDefBody(TokenModule.GetLexeme(@Source, name), isExported, startToken)
+        << def Box<T> { T Value }: the type parameters are kept in TypeName.
+        string typeParameters = ""
+        if (@CheckText("<")) {
+            typeParameters = @ParseTypeParameters()
         }
-        if (@CheckText("<") or @CheckKind(TokenModule.TokenKind::Colon)) {
+        if (@CheckKind(TokenModule.TokenKind::LeftBrace)) {
+            Ast.Node definition = @ParseDefBody(TokenModule.GetLexeme(@Source, name), isExported, startToken)
+            definition.TypeName = typeParameters
+            return definition
+        }
+        if (@CheckKind(TokenModule.TokenKind::Colon)) {
             report(
-                "generic and inherited def types are not supported yet at "
+                "def inheritance is not supported yet at "
                     .: @Tokens[@Current].Line .: ":" .: @Tokens[@Current].Column
             )
         }
@@ -806,6 +873,10 @@ export def Parser {
             return @ParseDocumentedDeclaration()
         }
         bool isExported = @this.MatchText("export");
+        << template<typename T> T First(array<T> values): parameters matter to the checker only.
+        if (@MatchText("template")) {
+            @ParseTypeParameters()
+        }
         number startToken = @this.Current;
 
         if (@this.CheckText("def")) {
@@ -967,6 +1038,9 @@ export def Parser {
         if (@this.CheckText("try")) {
             return @this.ParseTry();
         }
+        if (@CheckText("match")) {
+            return @ParseMatch()
+        }
         if (@this.CheckText("break") or @this.CheckText("continue")) {
             string keyword = @this.Text(@this.Current);
             @this.Current += 1;
@@ -1112,6 +1186,85 @@ export def Parser {
         push(statement.Children, @this.ParseBlock());
         statement.EndToken = @this.Current;
         return statement;
+    }
+
+    << func (Type a, Type b) -> Type { body }
+    << Children: Parameter nodes, then the body Block. TypeName is the return type.
+    Ast.Node ParseLambda() {
+        number startToken = @Current
+        @ExpectText("func", "'func'")
+        @ExpectKind(TokenModule.TokenKind::LeftParen, "'(' after func")
+        Ast.Node lambda = @NewNode(Ast.NodeKind::LambdaExpression, "<lambda>", "void", "", startToken, @Current)
+        if (not @CheckKind(TokenModule.TokenKind::RightParen)) {
+            while (true) {
+                number parameterStart = @Current
+                string parameterType = @ParseTypeName()
+                TokenModule.Token parameterName = @ExpectKind(TokenModule.TokenKind::Identifier, "parameter name")
+                push(lambda.Children, @NewNode(
+                    Ast.NodeKind::Parameter,
+                    TokenModule.GetLexeme(@Source, parameterName),
+                    parameterType,
+                    "",
+                    parameterStart,
+                    @Current
+                ))
+                if (not @MatchKind(TokenModule.TokenKind::Comma)) {
+                    break
+                }
+            }
+        }
+        @ExpectKind(TokenModule.TokenKind::RightParen, "')' after lambda parameters")
+        if (@MatchKind(TokenModule.TokenKind::FunctionArrow)) {
+            lambda.TypeName = @ParseTypeName()
+        }
+        push(lambda.Children, @ParseBlock())
+        lambda.EndToken = @Current
+        return lambda
+    }
+
+    << match (value) { pattern, pattern => body ... _ => body }
+    << Children: subject, then MatchArm nodes. An arm's children are its
+    << patterns followed by its body Block; `_` is an identifier with Value "wildcard".
+    Ast.Node ParseMatch() {
+        number startToken = @Current
+        @ExpectText("match", "'match'")
+        Ast.Node statement = @NewNode(Ast.NodeKind::MatchStatement, "", "", "", startToken, @Current)
+        push(statement.Children, @ParseCondition("match"))
+        @ExpectKind(TokenModule.TokenKind::LeftBrace, "'{' after match value")
+        while (not @CheckKind(TokenModule.TokenKind::RightBrace) and not @IsAtEnd()) {
+            if (@MatchKind(TokenModule.TokenKind::Comma) or @MatchKind(TokenModule.TokenKind::Semicolon)) {
+                continue
+            }
+            Ast.Node arm = @NewNode(Ast.NodeKind::MatchArm, "", "", "", @Current, @Current)
+            while (true) {
+                if (@CheckText("_")) {
+                    push(arm.Children, @NewNode(Ast.NodeKind::IdentifierExpression, "_", "", "wildcard", @Current, @Current + 1))
+                    @Current += 1
+                } else {
+                    push(arm.Children, @ParseExpression(3))
+                }
+                if (not @MatchKind(TokenModule.TokenKind::Comma)) {
+                    break
+                }
+            }
+            @ExpectKind(TokenModule.TokenKind::MatchArmOperator, "'=>' after match case")
+            if (@CheckKind(TokenModule.TokenKind::LeftBrace)) {
+                push(arm.Children, @ParseBlock())
+            } else {
+                number bodyStart = @Current
+                Ast.Node expression = @ParseExpression(0)
+                Ast.Node body = @NewNode(Ast.NodeKind::Block, "", "", "", bodyStart, @Current)
+                Ast.Node statementNode = @NewNode(Ast.NodeKind::ExpressionStatement, "", "", "", bodyStart, @Current)
+                push(statementNode.Children, expression)
+                push(body.Children, statementNode)
+                push(arm.Children, body)
+            }
+            arm.EndToken = @Current
+            push(statement.Children, arm)
+        }
+        @ExpectKind(TokenModule.TokenKind::RightBrace, "'}' to close match")
+        statement.EndToken = @Current
+        return statement
     }
 
     << try { } catch (error) { }
@@ -1592,6 +1745,10 @@ export def Parser {
             return access
         }
 
+        if (@CheckText("func")) {
+            return @ParseLambda()
+        }
+
         if (@CheckKind(TokenModule.TokenKind::LeftParen) and @LooksLikeTypedExpression()) {
             << (Type value): the value must have exactly this type.
             @Current += 1
@@ -1607,6 +1764,12 @@ export def Parser {
             Ast.Node expression = @this.ParseExpression(0);
             @this.ExpectKind(TokenModule.TokenKind::RightParen, "')' after expression");
             return expression;
+        }
+
+        if (@LooksLikeGenericConstruction()) {
+            string genericType = @ParseTypeName()
+            string baseName = genericType[0 .. Text.indexOf(genericType, "<")]
+            return @NewNode(Ast.NodeKind::IdentifierExpression, baseName, genericType, "", startToken, @Current)
         }
 
         if (@this.LooksLikeTypedCollection()) {

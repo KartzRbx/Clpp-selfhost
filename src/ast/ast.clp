@@ -39,6 +39,9 @@ export enum class NodeKind {
     ForInStatement,
     GuardStatement,
     TryStatement,
+    MatchStatement,
+    LambdaExpression,
+    MatchArm,
     BreakStatement,
     ContinueStatement
 }

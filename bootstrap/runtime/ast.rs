@@ -58,6 +58,8 @@ pub enum ExprKind {
     TypedCollection(TypeName, Vec<Expr>),
     /// `(Type value)`: the value must have exactly this type.
     Typed(TypeName, Box<Expr>),
+    /// `func (Type a) -> Type { ... }`: captures outer variables by value.
+    Lambda(Rc<FnDecl>),
 }
 
 #[derive(Debug, Clone)]
@@ -80,6 +82,16 @@ pub enum StmtKind {
     Continue,
     Return(Option<Expr>),
     Block(Vec<Stmt>),
+    /// `match (value) { pattern, pattern => body ... _ => body }`;
+    /// a `None` pattern is `_`.
+    Match(Expr, Vec<MatchArm>),
+}
+
+#[derive(Debug, Clone)]
+pub struct MatchArm {
+    pub patterns: Vec<Option<Expr>>,
+    pub body: Vec<Stmt>,
+    pub line: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -111,6 +123,8 @@ pub struct FieldDecl {
 #[derive(Debug)]
 pub struct DefDecl {
     pub name: String,
+    /// `def Box<T>`: type parameter names.
+    pub type_params: Vec<String>,
     pub pos: Pos,
     pub end_line: usize,
     pub fields: Vec<FieldDecl>,
