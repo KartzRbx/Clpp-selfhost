@@ -22,6 +22,12 @@
       "include": "#declarations"
     },
     {
+      "include": "#variable-declarations"
+    },
+    {
+      "include": "#parameters"
+    },
+    {
       "include": "#keywords"
     },
     {
@@ -37,10 +43,28 @@
       "include": "#enum-access"
     },
     {
+      "include": "#namespaces"
+    },
+    {
+      "include": "#method-calls"
+    },
+    {
       "include": "#calls"
     },
     {
+      "include": "#properties"
+    },
+    {
+      "include": "#type-names"
+    },
+    {
       "include": "#operators"
+    },
+    {
+      "include": "#punctuation"
+    },
+    {
+      "include": "#identifiers"
     }
   ],
   "repository": {
@@ -276,6 +300,9 @@
                 {
                   "match": "[A-Za-z_][\\w.]*",
                   "name": "entity.name.type.clpp"
+                },
+                {
+                  "include": "#punctuation"
                 }
               ]
             },
@@ -310,7 +337,7 @@
       "patterns": [
         {
           "name": "storage.type.primitive.clpp",
-          "match": "\\b(auto|number|float|string|bool|void|i8|i16|i32|i64|u8|u16|u32|u64|f32|f64)\\b"
+          "match": "\\b(auto|number|float|string|bool|void|i8|i16|i32|i64|u8|u16|u32|u64|f16|f32|f64)\\b"
         },
         {
           "name": "support.type.clpp",
@@ -319,8 +346,16 @@
       ]
     },
     "constants": {
-      "name": "constant.language.clpp",
-      "match": "\\b(true|false|null)\\b"
+      "patterns": [
+        {
+          "name": "constant.language.clpp",
+          "match": "\\b(true|false|null)\\b"
+        },
+        {
+          "name": "variable.other.constant.clpp",
+          "match": "\\b[A-Z][A-Z0-9_]{1,}\\b"
+        }
+      ]
     },
     "this": {
       "patterns": [
@@ -329,13 +364,24 @@
           "match": "@this\\b"
         },
         {
+          "match": "(@)([A-Za-z_]\\w*)(?=\\s*\\()",
+          "captures": {
+            "1": {
+              "name": "variable.language.this.clpp"
+            },
+            "2": {
+              "name": "entity.name.function.method.clpp"
+            }
+          }
+        },
+        {
           "match": "(@)([A-Za-z_]\\w*)",
           "captures": {
             "1": {
               "name": "variable.language.this.clpp"
             },
             "2": {
-              "name": "variable.other.member.clpp"
+              "name": "variable.other.property.clpp"
             }
           }
         }
@@ -370,6 +416,14 @@
     "operators": {
       "patterns": [
         {
+          "name": "keyword.operator.bitwise.clpp",
+          "match": "[&|^~]"
+        },
+        {
+          "name": "keyword.operator.scope.clpp",
+          "match": "::"
+        },
+        {
           "name": "keyword.operator.concatenation.clpp",
           "match": "\\.:"
         },
@@ -384,6 +438,10 @@
         {
           "name": "keyword.operator.comparison.clpp",
           "match": "==|!=|<=|>="
+        },
+        {
+          "name": "keyword.operator.comparison.clpp",
+          "match": "<|>"
         },
         {
           "name": "keyword.operator.assignment.compound.clpp",
@@ -432,6 +490,129 @@
           "name": "entity.name.tag.todo-owner.clpp"
         }
       }
+    },
+    "variable-declarations": {
+      "match": "^\\s*((?:(?:const|export|public|private)\\s+)*)(?!(?:return|if|else|while|for|do|guard|try|catch|match|break|continue|link|def|enum|export|const|post|warn|report|and|or|not|in|as|func|template)\\b)([A-Za-z_][\\w.]*(?:<[\\w.,\\s<>]*>)?)\\s+([A-Za-z_]\\w*)\\s*(?==|;|$|<<)",
+      "captures": {
+        "1": {
+          "name": "storage.modifier.clpp"
+        },
+        "2": {
+          "patterns": [
+            {
+              "include": "#types"
+            },
+            {
+              "include": "#type-names"
+            },
+            {
+              "include": "#punctuation"
+            }
+          ]
+        },
+        "3": {
+          "name": "variable.other.declaration.clpp"
+        }
+      }
+    },
+    "parameters": {
+      "match": "(?<=[(,])\\s*(?!(?:return|if|else|while|for|do|guard|try|catch|match|break|continue|link|def|enum|export|const|post|warn|report|and|or|not|in|as|func|template)\\b)([A-Za-z_][\\w.]*(?:<[\\w.,\\s<>]*>)?)\\s+([A-Za-z_]\\w*)\\s*(?=[,)])",
+      "captures": {
+        "1": {
+          "patterns": [
+            {
+              "include": "#types"
+            },
+            {
+              "include": "#type-names"
+            },
+            {
+              "include": "#punctuation"
+            }
+          ]
+        },
+        "2": {
+          "name": "variable.parameter.clpp"
+        }
+      }
+    },
+    "type-names": {
+      "patterns": [
+        {
+          "match": "\\b([A-Z]\\w*)(\\.)([A-Z]\\w*)",
+          "captures": {
+            "1": {
+              "name": "entity.name.namespace.clpp"
+            },
+            "2": {
+              "name": "punctuation.accessor.clpp"
+            },
+            "3": {
+              "name": "entity.name.type.clpp"
+            }
+          }
+        },
+        {
+          "match": "\\b[A-Z]\\w*\\b",
+          "name": "entity.name.type.clpp"
+        }
+      ]
+    },
+    "namespaces": {
+      "match": "\\b([A-Z][A-Za-z0-9_]*)(?=\\.[A-Za-z_])",
+      "name": "entity.name.namespace.clpp"
+    },
+    "properties": {
+      "match": "(?<=[A-Za-z0-9_)\\]]\\.)\\s*([A-Za-z_]\\w*)\\b(?!\\s*\\()",
+      "captures": {
+        "1": {
+          "name": "variable.other.property.clpp"
+        }
+      }
+    },
+    "method-calls": {
+      "match": "(?<=[A-Za-z0-9_)\\]]\\.)\\s*([A-Za-z_]\\w*)(?=\\s*\\()",
+      "captures": {
+        "1": {
+          "name": "entity.name.function.method.clpp"
+        }
+      }
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "match": ",",
+          "name": "punctuation.separator.comma.clpp"
+        },
+        {
+          "match": ";",
+          "name": "punctuation.terminator.statement.clpp"
+        },
+        {
+          "match": "\\.(?![.:])",
+          "name": "punctuation.accessor.clpp"
+        },
+        {
+          "match": "[()]",
+          "name": "punctuation.section.parens.clpp"
+        },
+        {
+          "match": "[\\[\\]]",
+          "name": "punctuation.section.brackets.clpp"
+        },
+        {
+          "match": "[{}]",
+          "name": "punctuation.section.braces.clpp"
+        },
+        {
+          "match": "[<>]",
+          "name": "keyword.operator.comparison.clpp"
+        }
+      ]
+    },
+    "identifiers": {
+      "match": "\\b[A-Za-z_]\\w*\\b",
+      "name": "variable.other.readwrite.clpp"
     }
   }
 }

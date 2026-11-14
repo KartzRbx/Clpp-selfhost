@@ -32,6 +32,9 @@ jobs:
       - name: Self-hosting (the compiler compiles itself)
         run: bootstrap/target/release/clpp-boot bootstrap
 
+      - name: Tutorial site (every example must run and type check)
+        run: python docs/learn/build.py --check
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20

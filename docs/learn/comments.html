@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CL++ Comments</title><meta name="description" content="CL++ tutorial: Comments">
+<link rel="icon" href="icon.png"><style>
+:root{--bg:#1A1C1F;--top:#141518;--top2:#2A2C33;--side:#202227;--side-hover:#2C2E35;--accent:#CC2421;--accent2:#A51D1B;
+--link:#77C821;--text:#CACACA;--strong:#ECECEC;--muted:#878787;--panel:#202227;--code:#16171A;--border:#353741;
+--note:#2A2617;--note-b:#FFAA00;--tip:#1C2A1A;--tip-b:#77C821;
+--kw:#5A8D7E;--decl:#CC2421;--ty:#55557F;--var:#E8C98A;--oper:#E07A5F;--punct:#A08C6E;--bracket:#C468E3;--name:#E0A458;--ns:#8FB8FF;--call:#F28B62;--fn:#FFAA00;--prop:#6EC6C3;
+--this:#C468E3;--str:#77C821;--num:#D4B98C;--const:#FFC001;--com:#878787;--op:#C468E3}
+:root[data-theme=light]{--bg:#FFFDF8;--top:#2A2C33;--top2:#3A3D46;--side:#F4EEE3;--side-hover:#E9E0D0;--accent:#C21F1C;--accent2:#9E1917;
+--link:#3E8A0E;--text:#2B2A27;--strong:#141312;--muted:#6E6A62;--panel:#F4EEE3;--code:#FFFFFF;--border:#E2D8C6;
+--note:#FFF4D6;--note-b:#E0A000;--tip:#EAF6DF;--tip-b:#5DA21A;
+--var:#7A5A16;--oper:#C2491F;--punct:#7A6A50;--bracket:#8E2FB0;--kw:#2F6F5E;--decl:#B81E1B;--ty:#4B4BA8;--name:#A3621A;--ns:#2C5FB8;--call:#C2491F;--fn:#B87400;--prop:#1F7F7B;
+--this:#8E2FB0;--str:#3E8A0E;--num:#8A6A2E;--const:#A87A00;--com:#7A7A7A;--op:#8E2FB0}
+*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--text);font:16px/1.65 "Segoe UI",Verdana,system-ui,sans-serif}
+a{color:var(--link)}strong{color:var(--strong)}
+header{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:18px;height:54px;padding:0 16px;background:var(--top);color:#fff;border-bottom:3px solid var(--accent)}
+header .logo{display:flex;align-items:center;gap:8px;font-weight:800;font-size:22px;color:#fff;text-decoration:none;letter-spacing:.5px}
+header .logo img{width:28px;height:28px;border-radius:6px}
+header .logo span{color:#FFAA00}
+header nav a{color:#D4D4D4;text-decoration:none;padding:16px 12px;font-size:15px}
+header nav a:hover,header nav a.on{background:var(--top2);color:#fff}
+header nav a.on{box-shadow:inset 0 -3px 0 #FFAA00}
+header .grow{flex:1}
+#menu{display:none;background:none;border:0;color:#fff;font-size:24px;cursor:pointer}
+#theme{background:var(--top2);color:#fff;border:1px solid #4A4D57;border-radius:5px;padding:5px 11px;cursor:pointer}
+.layout{display:flex;min-height:calc(100vh - 54px)}
+aside{width:235px;flex:none;background:var(--side);padding:10px 0 40px;position:sticky;top:54px;height:calc(100vh - 54px);overflow-y:auto;border-right:1px solid var(--border)}
+aside h4{margin:16px 16px 4px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:#FFAA00}
+aside a{display:block;padding:4px 16px 4px 22px;color:var(--text);text-decoration:none;font-size:15px;border-left:3px solid transparent}
+aside a:hover{background:var(--side-hover);color:var(--strong)}
+aside a.on{background:var(--accent);color:#fff;border-left-color:#FFAA00}
+main{flex:1;min-width:0;max-width:920px;padding:18px 34px 60px}
+h1{font-size:40px;font-weight:600;margin:6px 0 12px;color:var(--strong)}
+h2{font-size:27px;font-weight:600;margin:34px 0 10px;color:var(--strong)}
+.pager{display:flex;justify-content:space-between;margin:14px 0 18px}
+.pager a{background:var(--accent);color:#fff;text-decoration:none;padding:8px 18px;border-radius:6px;font-size:15px;font-weight:600}
+.pager a:hover{background:var(--accent2)}.pager span{flex:1}
+hr{border:0;border-top:1px solid var(--border);margin:24px 0}
+code{font-family:Consolas,"Cascadia Mono",Menlo,monospace;font-size:15px;color:#FFAA00;background:var(--panel);padding:1px 5px;border-radius:4px}
+pre code{color:var(--text);background:none;padding:0}
+.example{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:10px 18px 18px;margin:20px 0}
+.example h3{margin:4px 0 10px;font-size:21px;font-weight:600;color:var(--strong)}
+.code{position:relative;background:var(--code);border-left:4px solid var(--accent);border-radius:4px;padding:12px 16px;overflow-x:auto}
+.code pre,.syntax pre,.output pre{margin:0;font-family:Consolas,"Cascadia Mono",Menlo,monospace;font-size:15px;line-height:1.55;white-space:pre}
+.copy{position:absolute;top:8px;right:8px;background:var(--accent);color:#fff;border:0;border-radius:4px;padding:3px 10px;font-size:13px;cursor:pointer;opacity:.9}
+.output{margin-top:10px;background:var(--code);border-left:4px solid #FFAA00;border-radius:4px;padding:8px 16px;overflow-x:auto}
+.output pre{color:var(--strong)}
+.output span{display:block;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:2px}
+.output.bad{border-left-color:#FF5F56}.output.bad pre{color:#FF8A84}
+.syntax{background:var(--code);border-left:4px solid #77C821;border-radius:4px;padding:12px 16px;margin:14px 0;overflow-x:auto}
+.note,.tip{border-left:5px solid var(--note-b);background:var(--note);padding:12px 16px;margin:16px 0;border-radius:4px}
+.tip{border-left-color:var(--tip-b);background:var(--tip)}
+table.ref{border-collapse:collapse;width:100%;margin:14px 0;font-size:15px}
+table.ref th{background:var(--accent);color:#fff;text-align:left}
+table.ref th,table.ref td{border:1px solid var(--border);padding:7px 10px;vertical-align:top}
+table.ref tr:nth-child(even) td{background:var(--panel)}
+.kw{color:var(--kw);font-weight:700}.decl{color:var(--decl);font-weight:700}.ty{color:var(--ty)}.name{color:var(--name)}
+.ns{color:var(--ns)}.call{color:var(--call)}.fn{color:var(--fn)}.prop{color:var(--prop)}.this{color:var(--this);font-style:italic}
+.str{color:var(--str)}.num{color:var(--num)}.const{color:var(--const);font-weight:700}.enum{color:var(--const);font-style:italic}
+.comment{color:var(--com);font-style:italic}.var{color:var(--var)}.oper{color:var(--oper)}.punct{color:var(--punct)}
+.code pre code,.syntax pre code{color:var(--bracket)}.op{color:var(--op)}.tpl{color:var(--this);font-weight:700}
+.hero{background:linear-gradient(135deg,#CC2421 0%,#E0662B 55%,#FFAA00 100%);color:#fff;border-radius:10px;padding:28px 30px;margin:10px 0 22px;box-shadow:0 6px 24px #0006}
+.hero h1{margin:0 0 6px;font-size:48px;color:#fff}.hero p{margin:0 0 16px;font-size:18px}
+.hero a{display:inline-block;background:#1A1C1F;color:#FFAA00;font-weight:700;text-decoration:none;padding:10px 22px;border-radius:6px}
+.hero a:hover{background:#000}
+footer{color:var(--muted);font-size:13px;margin-top:40px}
+@media (max-width:820px){#menu{display:block}aside{position:fixed;left:-260px;top:54px;z-index:9;transition:left .2s;box-shadow:2px 0 10px #0008}
+aside.open{left:0}main{padding:14px 16px 50px}h1{font-size:32px}header nav{display:none}.hero h1{font-size:36px}}
+</style></head>
+<body><header><button id="menu" aria-label="Menu">&#9776;</button><a class="logo" href="index.html"><img src="icon.png" alt="">CL<span>++</span></a>
+<nav><a class="on" href="index.html">Tutorial</a><a href="reference.html">Reference</a><a href="exercises.html">Exercises</a></nav>
+<span class="grow"></span><button id="theme" title="Italian Pizza (dark) or Margherita (light)">&#127829; Theme</button></header>
+<div class="layout"><aside><h4>CL++ Tutorial</h4>
+<a href="home.html">CL++ Home</a>
+<a href="introduction.html">CL++ Intro</a>
+<a href="get_started.html">CL++ Get Started</a>
+<a href="syntax.html">CL++ Syntax</a>
+<a href="output.html">CL++ Output</a>
+<a class="on" href="comments.html">CL++ Comments</a>
+<h4>Variables and Types</h4>
+<a href="variables.html">CL++ Variables</a>
+<a href="constants.html">CL++ Constants</a>
+<a href="scope.html">CL++ Scope</a>
+<a href="data_types.html">CL++ Data Types</a>
+<a href="numbers.html">CL++ Numbers</a>
+<a href="sized_numbers.html">CL++ Sized Numbers</a>
+<a href="booleans.html">CL++ Booleans</a>
+<a href="strings.html">CL++ Strings</a>
+<a href="template_strings.html">CL++ Template Strings</a>
+<a href="typed_values.html">CL++ Typed Values</a>
+<a href="type_conversion.html">CL++ Type Conversion</a>
+<h4>Operators and Math</h4>
+<a href="operators.html">CL++ Operators</a>
+<a href="operator_precedence.html">CL++ Precedence</a>
+<a href="math.html">CL++ Math</a>
+<h4>Control Flow</h4>
+<a href="if_else.html">CL++ If...Else</a>
+<a href="match.html">CL++ Match</a>
+<a href="while_loop.html">CL++ While Loop</a>
+<a href="for_loop.html">CL++ For Loop</a>
+<a href="break_and_continue.html">CL++ Break/Continue</a>
+<a href="guard.html">CL++ Guard</a>
+<h4>Collections</h4>
+<a href="arrays.html">CL++ Arrays</a>
+<a href="arrays_in_depth.html">CL++ Arrays in Depth</a>
+<a href="dictionaries.html">CL++ Dictionaries</a>
+<a href="table_functions.html">CL++ Table Functions</a>
+<h4>Functions</h4>
+<a href="functions.html">CL++ Functions</a>
+<a href="recursion.html">CL++ Recursion</a>
+<a href="command_line_arguments.html">CL++ Arguments</a>
+<a href="lambdas.html">CL++ Lambdas</a>
+<h4>Defs</h4>
+<a href="defs.html">CL++ Defs</a>
+<a href="methods.html">CL++ Methods</a>
+<a href="inheritance.html">CL++ Inheritance</a>
+<a href="enums.html">CL++ Enums</a>
+<a href="generics.html">CL++ Generics</a>
+<a href="optional.html">CL++ Optional</a>
+<h4>Errors</h4>
+<a href="exceptions.html">CL++ Exceptions</a>
+<h4>Modules and Library</h4>
+<a href="modules.html">CL++ Modules</a>
+<a href="text.html">CL++ Text</a>
+<a href="time.html">CL++ Time</a>
+<a href="json.html">CL++ JSON</a>
+<a href="files.html">CL++ Files</a>
+<h4>Tools</h4>
+<a href="compile_and_run.html">CL++ Compile and Run</a>
+<a href="editor.html">CL++ Editor</a>
+<h4>Examples</h4>
+<a href="example_hello_game_loop.html">Game Loop</a>
+<a href="example_inventory.html">Inventory</a>
+<a href="example_bank_account.html">Bank Account</a>
+<a href="example_prime_numbers.html">Prime Numbers</a>
+<a href="example_sorting.html">Sorting</a>
+<a href="example_text_statistics.html">Text Statistics</a>
+<a href="example_save_and_load.html">Save and Load</a>
+<a href="example_shapes.html">Shapes</a>
+<h4>Tests</h4>
+<a href="writing_tests.html">Writing Tests</a>
+<a href="type_error_tests.html">Type Error Tests</a>
+<a href="golden_tests.html">Golden Tests</a>
+<h4>Performance</h4>
+<a href="benchmarks.html">Benchmarks</a>
+<h4>Reference</h4>
+<a href="reference.html">CL++ Reference</a>
+<a href="exercises.html">CL++ Exercises</a></aside>
+<main><h1>Comments</h1><div class="pager"><a href="output.html">&#10094; Previous</a><span></span><a href="variables.html">Next &#10095;</a></div><hr>
+<p>Comments are notes for people. The program ignores them. CL++ has three kinds.</p>
+<table class="ref"><tr><th>Kind</th><th>Written as</th><th>Ends at</th><th>Use it for</th></tr><tr><td>Line comment</td><td><code>&lt;&lt; text</code></td><td>the end of the line</td><td>short notes</td></tr><tr><td>Block comment</td><td><code>&lt;&lt;[ text ]&gt;&gt;</code></td><td>the first <code>]&gt;&gt;</code></td><td>long explanations, turning code off</td></tr><tr><td>Documentation comment</td><td><code>&lt;&lt;{ !tag = &quot;...&quot; }&gt;&gt;</code></td><td>the first <code>}&gt;&gt;</code></td><td>describing the declaration below it</td></tr></table>
+<h2>Line comments: &lt;&lt;</h2>
+<p>Everything from <code>&lt;&lt;</code> to the end of the line is ignored. A line comment can stand alone or follow code.</p>
+<div class="example"><h3>Example</h3><div class="code"><button class="copy" title="Copy">Copy</button><pre><code><span class="comment">&lt;&lt; This whole line is a comment</span>
+<span class="ty">number</span> <span class="var">lives</span> <span class="oper">=</span> <span class="num">3</span> <span class="comment">&lt;&lt; the rest of this line is a comment too</span>
+<span class="fn">post</span>(<span class="var">lives</span>)</code></pre></div><div class="output "><span>Output</span><pre>3</pre></div></div>
+<h2>Block comments: &lt;&lt;[ ... ]&gt;&gt;</h2>
+<p>A block comment can span several lines. It starts at <code>&lt;&lt;[</code> and ends at the first <code>]&gt;&gt;</code>.</p>
+<div class="example"><h3>Example</h3><div class="code"><button class="copy" title="Copy">Copy</button><pre><code><span class="comment">&lt;&lt;[
+    Game settings.
+    These values are read once, at start.
+]&gt;&gt;</span>
+<span class="ty">number</span> <span class="var">width</span> <span class="oper">=</span> <span class="num">640</span> <span class="comment">&lt;&lt;[ pixels ]&gt;&gt;</span>
+<span class="fn">post</span>(<span class="var">width</span>)</code></pre></div><div class="output "><span>Output</span><pre>640</pre></div></div>
+<h2>Turning code off</h2>
+<p>Wrap code in a block comment to disable it without deleting it.</p>
+<div class="example"><h3>Example</h3><div class="code"><button class="copy" title="Copy">Copy</button><pre><code><span class="fn">post</span>(<span class="str">&quot;this runs&quot;</span>)
+<span class="comment">&lt;&lt;[
+post(&quot;this does not run&quot;)
+post(&quot;neither does this&quot;)
+]&gt;&gt;</span>
+<span class="fn">post</span>(<span class="str">&quot;this runs too&quot;</span>)</code></pre></div><div class="output "><span>Output</span><pre>this runs
+this runs too</pre></div></div>
+<div class="note"><strong>Note:</strong> Block comments do <strong>not</strong> nest: the first <code>]&gt;&gt;</code> ends the comment, even inside another <code>&lt;&lt;[</code>.</div>
+<h2>Comments inside strings are text</h2>
+<div class="example"><h3>Example</h3><div class="code"><button class="copy" title="Copy">Copy</button><pre><code><span class="fn">post</span>(<span class="str">&quot;&lt;&lt; this is not a comment, it is text&quot;</span>)</code></pre></div><div class="output "><span>Output</span><pre>&lt;&lt; this is not a comment, it is text</pre></div></div>
+<h2>Documentation comments: &lt;&lt;{ ... }&gt;&gt;</h2>
+<p>A documentation comment describes the function, variable, def or enum right <strong>below</strong> it. Each line inside is a tag: <code>!tag = &quot;value&quot;</code>. In VS Code, hovering the name shows these tags.</p>
+<div class="example"><h3>Example</h3><div class="code"><button class="copy" title="Copy">Copy</button><pre><code><span class="comment">&lt;&lt;{
+    !name = &quot;Distance&quot;
+    !desc = &quot;Distance between two numbers on a line.&quot;
+    !params = &quot;from: number, to: number&quot;
+    !return = &quot;number, never negative&quot;
+    !example = &quot;Distance(2, 7) is 5&quot;
+}&gt;&gt;</span>
+<span class="ty">number</span> <span class="call">Distance</span>(<span class="ty">number</span> <span class="var">from</span><span class="punct">,</span> <span class="ty">number</span> <span class="var">to</span>) {
+    <span class="kw">if</span> (<span class="var">to</span> <span class="oper">&gt;</span> <span class="var">from</span>) {
+        <span class="kw">return</span> <span class="var">to</span> <span class="oper">-</span> <span class="var">from</span>
+    }
+    <span class="kw">return</span> <span class="var">from</span> <span class="oper">-</span> <span class="var">to</span>
+}
+
+<span class="fn">post</span>(<span class="call">Distance</span>(<span class="num">2</span><span class="punct">,</span> <span class="num">7</span>))</code></pre></div><div class="output "><span>Output</span><pre>5</pre></div></div>
+<table class="ref"><tr><th>Tag</th><th>Meaning</th></tr><tr><td><code>!name</code></td><td>the declared name; must match it exactly</td></tr><tr><td><code>!desc</code></td><td>what it does</td></tr><tr><td><code>!params</code></td><td>the parameters</td></tr><tr><td><code>!return</code></td><td>what it returns</td></tr><tr><td><code>!example</code></td><td>a short usage example</td></tr><tr><td><code>!deprecated</code></td><td>why not to use it any more, and what to use instead</td></tr><tr><td><code>!see</code></td><td>related declarations</td></tr></table>
+<ul><li>Values must be in quotes: <code>!desc = &quot;text&quot;</code>.</li><li>Each tag may appear once per comment.</li><li>A documentation comment must be followed by a declaration, not by a statement such as <code>post(...)</code>.</li><li>Unknown tags such as <code>!author</code> are reported as errors by the CL++ compiler.</li></ul>
+<h2>Notes for later: TODO and FIXME</h2>
+<p>Write <code>TODO</code>, <code>FIXME</code>, <code>BUG</code>, <code>HACK</code> or <code>XXX</code> in any comment. The editor highlights it and lists it in the Problems panel, so unfinished work is not forgotten.</p>
+<div class="example"><h3>Example</h3><div class="code"><button class="copy" title="Copy">Copy</button><pre><code><span class="comment">&lt;&lt; TODO: read the volume from the settings file</span>
+<span class="ty">number</span> <span class="var">volume</span> <span class="oper">=</span> <span class="num">7</span>
+<span class="comment">&lt;&lt; FIXME: volume above 10 is too loud</span>
+<span class="fn">post</span>(<span class="var">volume</span>)</code></pre></div><div class="output "><span>Output</span><pre>7</pre></div></div>
+<div class="tip"><strong>Tip:</strong> In VS Code, <code>Ctrl+/</code> comments or uncomments the selected lines with <code>&lt;&lt;</code>.</div>
+<hr><div class="pager"><a href="output.html">&#10094; Previous</a><span></span><a href="variables.html">Next &#10095;</a></div><footer>CL++ tutorial. Every example on this page was run by clpp-boot when the site was built.</footer></main></div>
+<script>
+for(const b of document.querySelectorAll('.copy')){b.onclick=()=>{const t=b.parentElement.querySelector('code').innerText;
+navigator.clipboard.writeText(t).then(()=>{b.textContent='Copied';setTimeout(()=>b.textContent='Copy',1200)})}}
+document.getElementById('menu').onclick=()=>document.querySelector('aside').classList.toggle('open');
+const root=document.documentElement,saved=(()=>{try{return localStorage.getItem('clpp-theme')}catch(e){return null}})();
+if(saved)root.dataset.theme=saved;
+document.getElementById('theme').onclick=()=>{root.dataset.theme=root.dataset.theme==='light'?'dark':'light';
+try{localStorage.setItem('clpp-theme',root.dataset.theme)}catch(e){}};
+const on=document.querySelector('aside a.on');if(on)on.scrollIntoView({block:'center'});
+</script></body></html>

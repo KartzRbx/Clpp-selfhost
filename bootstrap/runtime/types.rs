@@ -901,7 +901,11 @@ impl<'a> TypeChecker<'a> {
                 }
                 let arg_types: Vec<String> = args.iter().map(|a| self.expr(a, None)).collect();
                 match n.as_str() {
-                    "len" | "find" => "number".into(),
+                    "len" => "number".into(),
+                    // find(dictionary, key) tells whether the key exists.
+                    "find" if arg_types.first().map(|t| t.starts_with("dictionary")).unwrap_or(false) => "bool".into(),
+                    "find" if arg_types.first().map(|t| t == UNKNOWN).unwrap_or(true) => UNKNOWN.into(),
+                    "find" => "number".into(),
                     "args" => "array<string>".into(),
                     "pop" | "remove" => split_type(arg_types.first().map(String::as_str).unwrap_or(UNKNOWN)).1.first().cloned().unwrap_or_else(|| UNKNOWN.into()),
                     "push" => {

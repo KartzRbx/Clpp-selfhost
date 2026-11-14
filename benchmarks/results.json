@@ -1,0 +1,61 @@
+{
+  "machine": "Windows AMD64, Intel64 Family 6 Model 30 Stepping 5, GenuineIntel",
+  "runs": 3,
+  "date": "2026-11-13",
+  "results": [
+    {
+      "name": "arrays",
+      "what": "Arrays: push, index, sort.",
+      "output": "4999997508 0 100002",
+      "interpreter": 0.383,
+      "vm": 0.162,
+      "compile": 0.131,
+      "speedup": 2.4
+    },
+    {
+      "name": "dictionaries",
+      "what": "Dictionaries: insert, update and lookup.",
+      "output": "200 100",
+      "interpreter": 0.172,
+      "vm": 0.123,
+      "compile": 0.091,
+      "speedup": 1.4
+    },
+    {
+      "name": "fib",
+      "what": "Recursive Fibonacci: function calls and arithmetic.",
+      "output": "46368",
+      "interpreter": 0.505,
+      "vm": 0.12,
+      "compile": 0.102,
+      "speedup": 4.2
+    },
+    {
+      "name": "loops",
+      "what": "Tight loop: additions, comparisons and a modulo.",
+      "output": "166666833333",
+      "interpreter": 1.618,
+      "vm": 0.664,
+      "compile": 0.108,
+      "speedup": 2.4
+    },
+    {
+      "name": "objects",
+      "what": "Objects: construction, field access and method calls.",
+      "output": "160.0",
+      "interpreter": 0.508,
+      "vm": 0.154,
+      "compile": 0.1,
+      "speedup": 3.3
+    },
+    {
+      "name": "strings",
+      "what": "Strings: concatenation, templates and slicing.",
+      "output": "5000 500",
+      "interpreter": 0.04,
+      "vm": 0.031,
+      "compile": 0.08,
+      "speedup": 1.3
+    }
+  ]
+}

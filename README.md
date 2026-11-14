@@ -58,6 +58,23 @@ bootstrap/target/release/clpp-boot programa.clp arg1 arg2
 O `clpp-boot` não verifica tipos (isso é trabalho do checker em CL++) e ainda não
 suporta `match`, lambdas, templates `` ` ``, `def` genérico nem módulos `@clpp.*`.
 
+## Tutorial
+
+O site de aulas fica em [docs/learn](docs/learn/index.html) (estilo w3schools: menu de lições,
+exemplos com a saída real). Gere de novo com `python docs/learn/build.py`; cada exemplo é
+executado pelo `clpp-boot` e verificado pelo checker durante a geração.
+
+## Benchmarks
+
+`python benchmarks/run.py` mede cada programa de `benchmarks/` no interpretador e no `clpp-vm`
+(a saída precisa ser igual) e grava `benchmarks/results.json`, usado pela página Benchmarks do site.
+
+## Cores no editor
+
+`editors/vscode/test/colors.test.js` colore os arquivos `.clp` como o VS Code (gramática + tema) e
+falha se algum token ficar na cor padrão do tema. Rode com o Node do VS Code:
+`ELECTRON_RUN_AS_NODE=1 Code.exe editors/vscode/test/colors.test.js <tema.json>`.
+
 ## Ferramentas
 
 | Comando | O que faz |
