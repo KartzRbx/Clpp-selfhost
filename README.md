@@ -68,7 +68,8 @@ suporta `match`, lambdas, templates `` ` ``, `def` genérico nem módulos `@clpp
 | `clpp-boot src/clpp.clp entrada.clp saida.clpb` | Compila para bytecode. |
 | `clpp-boot bootstrap` | Auto-hospedagem: o compilador compila a si mesmo três vezes; os três bytecodes precisam ser idênticos. |
 | `clpp-vm saida.clpb` | Executa o bytecode na VM de registradores. |
-| `clpp-boot check arquivo.clp` | Erros sem executar: nomes, tipos, `link`, argumentos, literais fora da faixa, com sugestão ("did you mean"). |
+| `clpp-boot check arquivo.clp` | Erros sem executar: nomes, `link`, argumentos, literais fora da faixa e **tipos** (atribuições, argumentos, retornos, condições, operadores, campos), com sugestão. |
+| `clpp-boot check --expect tests/typecheck/*.fail.clp` | Confere que cada `<< expect: ...` corresponde a um erro na linha. |
 | `clpp-boot fmt [--check] arquivo.clp` | Formata (indentação, espaços, remove `;` sobrando). |
 | `clpp-boot lsp` | Servidor de linguagem para editores. |
 

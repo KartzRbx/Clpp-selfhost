@@ -19,7 +19,11 @@ formatting); VS Code extension with icons; `clpp-boot fmt`; readable error repor
 Self-hosting reached: `clpp-boot bootstrap` compiles the compiler with itself and the
 stage 1, 2 and 3 bytecode files are identical; `link` between files is compiled.
 
-Still open, in order: a real type checker, generics, `match`, lambdas, buffers, concurrency,
+Static type checker added (gradual: unknown types never raise errors) in `clpp-boot check`
+and the editor; `tests/typecheck/*.fail.clp` pin the expected errors. CI runs every suite on
+Linux and Windows (`.github/workflows/ci.yml`).
+
+Still open, in order: type checking inside the self-hosted compiler, generics, `match`, lambdas, buffers, concurrency,
 package manager, debugger.
 
 ## 0. Bootstrap (critical path)

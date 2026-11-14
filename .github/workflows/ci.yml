@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build clpp-boot and clpp-vm
+        run: cargo build --release --manifest-path bootstrap/Cargo.toml
+
+      - name: Rust unit tests
+        run: cargo test --release --lib --manifest-path bootstrap/Cargo.toml
+
+      - name: CL++ tests
+        run: bootstrap/target/release/clpp-boot test tests
+
+      - name: Golden tests (interpreter vs compiled bytecode)
+        run: bootstrap/target/release/clpp-boot golden
+
+      - name: Type checker
+        run: bootstrap/target/release/clpp-boot check --expect tests/typecheck/errors.fail.clp
+
+      - name: Self-hosting (the compiler compiles itself)
+        run: bootstrap/target/release/clpp-boot bootstrap
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: VS Code extension
+        run: node editors/vscode/test/extension.test.js

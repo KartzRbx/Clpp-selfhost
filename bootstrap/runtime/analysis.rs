@@ -56,6 +56,8 @@ pub struct Sym {
     pub ty: Option<String>,
     /// Fields and methods of a def, variants of an enum.
     pub children: Vec<Sym>,
+    /// Parameter types of functions and methods, as written.
+    pub params: Vec<String>,
     /// File that declares the symbol (for links: the linked file).
     pub path: PathBuf,
 }
@@ -231,7 +233,11 @@ pub fn analyze(path: &Path, text: &str, loader: Loader) -> Analysis {
     let mut checker = Checker { a: &analysis, index: &index, diags: Vec::new(), scopes: Vec::new(), def: None };
     checker.check_program(&program);
     let diags = checker.diags;
+    let mut types = crate::types::TypeChecker::new(&analysis, &index);
+    types.check(&program);
+    let type_diags = types.diags;
     analysis.diags.extend(diags);
+    analysis.diags.extend(type_diags);
     analysis.diags.sort_by_key(|d| (d.line, d.col));
     analysis.diags.dedup_by(|a, b| a.line == b.line && a.col == b.col && a.message == b.message);
     analysis.index = Some(index);
@@ -292,6 +298,7 @@ fn native_index(name: &Path) -> FileIndex {
                 arity: if constant { None } else { crate::stdlib::arity(signature) },
                 ty: None,
                 children: Vec::new(),
+        params: Vec::new(),
                 path: name.to_path_buf(),
             }
         })
@@ -406,6 +413,7 @@ fn function_sym(f: &FnDecl, owner: Option<&str>, text: &str, path: &Path, export
         arity: Some(f.params.len()),
         ty: Some(f.ret.render()),
         children: Vec::new(),
+        params: f.param_types.iter().map(TypeName::render).collect(),
         path: path.to_path_buf(),
     }
 }
@@ -425,6 +433,7 @@ pub fn build_index(path: &Path, program: &Program, text: &str) -> FileIndex {
         arity: None,
         ty,
         children: Vec::new(),
+        params: Vec::new(),
         path: path.to_path_buf(),
     };
     for item in &program.items {
@@ -730,11 +739,6 @@ impl<'a> Checker<'a> {
                     ExprKind::Float(f) => Some(crate::stdlib::SVal::Float(-f)),
                     _ => None,
                 },
-                ExprKind::Str(_) | ExprKind::Bool(_) => {
-                    let msg = format!("{} needs a number", name);
-                    self.error(line, name, msg);
-                    None
-                }
                 _ => None,
             };
             if let Some(v) = literal {
@@ -1004,6 +1008,7 @@ pub fn locals_at(program: &Program, index: &FileIndex, line: usize) -> Vec<Sym> 
         arity: None,
         ty,
         children: Vec::new(),
+        params: Vec::new(),
         path: index.path.clone(),
     };
     let stmts: &[Stmt] = match decl {
@@ -1127,6 +1132,7 @@ pub fn resolve(analysis: &Analysis, token_index: usize) -> Option<Sym> {
         arity: None,
         ty: None,
         children: Vec::new(),
+        params: Vec::new(),
         path: PathBuf::new(),
     })
 }

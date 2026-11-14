@@ -4,6 +4,7 @@
 //!   clpp-boot <file.clp> [args...]   run a program
 //!   clpp-boot test [dir]             run every .clp file under dir (default: tests)
 //!   clpp-boot check <file.clp>...    report errors without running
+//!   clpp-boot check --expect <f>...  compare with `<< expect:` comments (*.fail.clp)
 //!   clpp-boot fmt [--check] <file>...  format files in place
 //!   clpp-boot lsp                    language server over stdio
 //!   clpp-boot bootstrap              the compiler compiles itself; stages must match
@@ -19,6 +20,7 @@ mod lex;
 mod lsp;
 mod parse;
 mod stdlib;
+mod types;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -39,7 +41,9 @@ fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
     for path in entries {
         if path.is_dir() {
             collect(&path, out);
-        } else if path.extension().map(|e| e == "clp").unwrap_or(false) {
+        } else if path.extension().map(|e| e == "clp").unwrap_or(false)
+            && !path.to_string_lossy().ends_with(".fail.clp")
+        {
             out.push(path);
         }
     }
@@ -189,6 +193,44 @@ fn usage() -> ExitCode {
     ExitCode::from(2)
 }
 
+/// `check --expect`: every `<< expect: text` comment must match an error on
+/// its line, and there must be no other errors.
+fn check_expected(files: &[String]) -> bool {
+    let loader = |p: &Path| std::fs::read_to_string(p).ok();
+    let mut ok = true;
+    for file in files {
+        let text = std::fs::read_to_string(file).unwrap_or_default();
+        let expected: Vec<(usize, String)> = text
+            .lines()
+            .enumerate()
+            .filter_map(|(i, l)| l.split_once("<< expect:").map(|(_, e)| (i + 1, e.trim().to_string())))
+            .collect();
+        let result = analysis::analyze(Path::new(file), &text, &loader);
+        let errors: Vec<&analysis::Diag> = result.diags.iter().filter(|d| d.severity == analysis::Severity::Error).collect();
+        let mut problems = Vec::new();
+        for (line, wanted) in &expected {
+            if !errors.iter().any(|d| d.line == *line && d.message.contains(wanted.as_str())) {
+                problems.push(format!("line {}: expected an error containing \"{}\"", line, wanted));
+            }
+        }
+        for d in &errors {
+            if !expected.iter().any(|(line, wanted)| *line == d.line && d.message.contains(wanted.as_str())) {
+                problems.push(format!("line {}: unexpected error: {}", d.line, d.message));
+            }
+        }
+        if problems.is_empty() {
+            println!("PASS {} ({} expected errors)", file, expected.len());
+        } else {
+            ok = false;
+            println!("FAIL {}", file);
+            for p in problems {
+                println!("  {}", p);
+            }
+        }
+    }
+    ok
+}
+
 fn check(files: &[String]) -> bool {
     let loader = |p: &Path| std::fs::read_to_string(p).ok();
     let mut errors = 0;
@@ -295,7 +337,8 @@ fn real_main() -> ExitCode {
             if argv.len() < 2 {
                 return usage();
             }
-            if check(&argv[1..]) {
+            let ok = if argv[1] == "--expect" { check_expected(&argv[2..]) } else { check(&argv[1..]) };
+            if ok {
                 ExitCode::SUCCESS
             } else {
                 ExitCode::FAILURE
