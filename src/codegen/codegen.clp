@@ -3,11 +3,18 @@
 
     Registers: parameters first (methods: r0 is @this), then locals, then
     temporaries. Temporaries are released at the end of every statement.
-    Top-level variables become globals; top-level statements run in __main. ]>>
+    Top-level variables become globals; top-level statements run in __main.
+
+    Linked files are compiled into the same output. Their names get a module
+    prefix (`ast$Node`), and their top-level code runs in `<prefix>$__init`,
+    dependencies first, before __main. ]>>
 
 link "../ast/ast.clp" as Ast
 link "../lexer/token.clp" as TokenModule
+link "../lexer/lexer.clp" as Lexing
+link "../parser/parser.clp" as Parsing
 link @clpp.text as Text
+link @clpp.fs as Fs
 
 const array<string> NUMERIC_TYPES = array<string>(
     "number", "float", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "f16", "f32", "f64"
@@ -29,7 +36,19 @@ def Loop {
     number TryDepth
 }
 
+<< Modules already compiled into the output, shared by all generators.
+def Registry {
+    array<string> Paths
+    array<string> Prefixes
+    array<Generator> Modules
+    array<string> Inits
+}
+
 export def Generator {
+    string Prefix
+    Registry Modules
+    array<string> LinkAliases
+    array<string> LinkPrefixes
     string SourcePath
     array<TokenModule.Token> Tokens
     array<string> Lines
@@ -71,7 +90,127 @@ export def Generator {
         if (node.StartToken < len(@Tokens)) {
             line = @Tokens[node.StartToken].Line
         }
-        report("codegen: " .: message .: " (line " .: line .: ")")
+        report("codegen: " .: message .: " (" .: @SourcePath .: " line " .: line .: ")")
+    }
+
+    << ------------------------------------------------------------ modules
+
+    << Name as it appears in the bytecode: `prefix$name` in linked modules.
+    string Q(string name) {
+        if (@Prefix == "") {
+            return name
+        }
+        return @Prefix .: "$" .: name
+    }
+
+    << Prefix of a linked file alias, or "".
+    string LinkedPrefix(Ast.Node node) {
+        if (node.Kind != Ast.NodeKind::IdentifierExpression or @Local(node.Name) >= 0) {
+            return ""
+        }
+        number index = find(@LinkAliases, node.Name)
+        if (index < 0) {
+            return ""
+        }
+        return @LinkPrefixes[index]
+    }
+
+    Generator LinkedModule(string prefix) {
+        return @Modules.Modules[find(@Modules.Prefixes, prefix)]
+    }
+
+    << Folder part of a path ("" when there is none).
+    string Directory(string path) {
+        string clean = Text.replace(path, "\\", "/")
+        number slash = Text.lastIndexOf(clean, "/")
+        if (slash < 0) {
+            return ""
+        }
+        return clean[0 .. slash]
+    }
+
+    << Joins a link path to the folder of the current file, resolving . and ..
+    string Resolve(string relative) {
+        string clean = Text.replace(relative, "\\", "/")
+        array<string> parts = array<string>()
+        bool absolute = Text.startsWith(clean, "/") or Text.contains(clean, ":")
+        if (not absolute and @Directory(@SourcePath) != "") {
+            parts = Text.split(@Directory(@SourcePath), "/")
+        }
+        array<string> result = array<string>()
+        for (string part in parts) {
+            push(result, part)
+        }
+        for (string part in Text.split(clean, "/")) {
+            if (part == "..") {
+                if (len(result) > 0 and result[len(result) - 1] != "..") {
+                    pop(result)
+                } else {
+                    push(result, part)
+                }
+            } else if (part != "." and part != "") {
+                push(result, part)
+            }
+        }
+        string joined = Text.join(result, "/")
+        if (Text.startsWith(clean, "/")) {
+            joined = "/" .: joined
+        }
+        return joined
+    }
+
+    << Compiles a linked file once and returns its prefix.
+    string Link(Ast.Node declaration) {
+        string quoted = declaration.Value
+        string path = @Resolve(quoted[1 .. len(quoted) - 1])
+        number known = find(@Modules.Paths, path)
+        if (known >= 0) {
+            return @Modules.Prefixes[known]
+        }
+        guard (Fs.exists(path)) else {
+            @Fail(declaration, "linked file not found: " .: path)
+        }
+
+        string stem = path
+        if (Text.lastIndexOf(stem, "/") >= 0) {
+            stem = stem[Text.lastIndexOf(stem, "/") + 1 .. len(stem)]
+        }
+        if (Text.endsWith(stem, ".clp")) {
+            stem = stem[0 .. len(stem) - 4]
+        }
+        string prefix = stem
+        number suffix = 2
+        while (find(@Modules.Prefixes, prefix) >= 0) {
+            prefix = stem .: suffix
+            suffix += 1
+        }
+
+        string source = Fs.read(path)
+        auto tokens = Lexing.Lex(source)
+        Generator child = Generator {
+            Prefix = prefix,
+            Modules = @Modules,
+            LinkAliases = array<string>(),
+            LinkPrefixes = array<string>(),
+            SourcePath = path,
+            Tokens = tokens,
+            Lines = @Lines,
+            Body = array<string>(),
+            Functions = array<string>(),
+            Defs = array<Ast.Node>(),
+            Enums = array<string>(),
+            Globals = array<string>(),
+            GlobalTypes = array<string>(),
+            NativeAliases = array<string>(),
+            NativeModules = array<string>(),
+            Scopes = array<Scope>(),
+            Loops = array<Loop>()
+        }
+        push(@Modules.Paths, path)
+        push(@Modules.Prefixes, prefix)
+        push(@Modules.Modules, child)
+        child.Generate(Parsing.Parse(source, tokens))
+        return prefix
     }
 
     void TrackLine(Ast.Node node) {
@@ -220,25 +359,40 @@ export def Generator {
                     push(@NativeAliases, declaration.Name)
                     push(@NativeModules, declaration.Value[6 .. len(declaration.Value)])
                 } else {
-                    @Fail(declaration, "link to another file is not supported by the code generator yet")
+                    push(@LinkAliases, declaration.Name)
+                    push(@LinkPrefixes, @Link(declaration))
                 }
             } else if (declaration.Kind != Ast.NodeKind::TypeDeclaration) {
                 push(topLevel, declaration)
             }
         }
 
-        push(@Lines, ".clpb 1")
+        if (@Prefix == "") {
+            << The entry module writes the header first: linked files were
+            << appended while their links were read, so put it in front.
+            array<string> linked = array<string>()
+            for (string line in @Lines) {
+                push(linked, line)
+            }
+            while (len(@Lines) > 0) {
+                pop(@Lines)
+            }
+            push(@Lines, ".clpb 1")
+            string moduleName = module.Name
+            if (moduleName == "") {
+                moduleName = "Main"
+            }
+            push(@Lines, ".module " .: moduleName)
+            for (string line in linked) {
+                push(@Lines, line)
+            }
+        }
         if (@SourcePath != "") {
             push(@Lines, ".source " .: @SourcePath)
         }
-        string moduleName = module.Name
-        if (moduleName == "") {
-            moduleName = "Main"
-        }
-        push(@Lines, ".module " .: moduleName)
         for (Ast.Node declaration in module.Declarations) {
             if (declaration.Kind == Ast.NodeKind::EnumDeclaration) {
-                string line = ".enum " .: declaration.Name
+                string line = ".enum " .: @Q(declaration.Name)
                 for (Ast.Node member in declaration.Children) {
                     line = line .: " " .: member.Name
                 }
@@ -246,7 +400,7 @@ export def Generator {
             }
         }
         for (Ast.Node definition in @Defs) {
-            string line = ".def " .: definition.Name
+            string line = ".def " .: @Q(definition.Name)
             for (Ast.Node member in definition.Children) {
                 if (member.Kind == Ast.NodeKind::FieldDeclaration) {
                     line = line .: " " .: member.Name
@@ -258,10 +412,11 @@ export def Generator {
             push(@Lines, line)
         }
         for (string global in @Globals) {
-            push(@Lines, ".global " .: global)
+            push(@Lines, ".global " .: @Q(global))
         }
 
         for (Ast.Node definition in @Defs) {
+            @Defaults(definition)
             for (Ast.Node member in definition.Children) {
                 if (member.Kind == Ast.NodeKind::FunctionDeclaration) {
                     @Function(member, definition.Name)
@@ -275,6 +430,27 @@ export def Generator {
         }
         @Main(topLevel)
         return Text.join(@Lines, "\n") .: "\n"
+    }
+
+    << `Def.__defaults`: sets every field to its default; construction calls it
+    << first and then stores the fields that were given.
+    void Defaults(Ast.Node definition) {
+        @BeginFunction(true, false)
+        @Alloc()
+        for (Ast.Node member in definition.Children) {
+            if (member.Kind == Ast.NodeKind::FieldDeclaration) {
+                number mark = @Next
+                number value = @Alloc()
+                if (len(member.Children) > 0) {
+                    @Expression(member.Children[0], value)
+                } else {
+                    @ZeroValue(member.TypeName, value)
+                }
+                @Emit("SETF r0 " .: member.Name .: " r" .: value)
+                @Next = mark
+            }
+        }
+        @EndFunction(@Q(definition.Name) .: ".__defaults", 1)
     }
 
     void BeginFunction(bool isMethod, bool isMain) {
@@ -325,19 +501,31 @@ export def Generator {
         for (Ast.Node statement in body.Children) {
             @Statement(statement)
         }
-        string name = function.Name
+        string name = @Q(function.Name)
         if (isMethod) {
-            name = owner .: "." .: function.Name
+            name = @Q(owner) .: "." .: function.Name
         }
         @EndFunction(name, parameters)
     }
 
     void Main(array<Ast.Node> statements) {
         @BeginFunction(false, true)
+        if (@Prefix == "") {
+            << Linked modules run first, dependencies before the modules that use them.
+            for (string init in @Modules.Inits) {
+                number result = @Alloc()
+                @Emit("CALL r" .: result .: " " .: init .: " r" .: result .: " 0")
+            }
+        }
         for (Ast.Node statement in statements) {
             @Statement(statement)
         }
-        @EndFunction("__main", 0)
+        if (@Prefix == "") {
+            @EndFunction("__main", 0)
+        } else {
+            @EndFunction(@Q("__init"), 0)
+            push(@Modules.Inits, @Q("__init"))
+        }
     }
 
     << ------------------------------------------------------------ statements
@@ -454,7 +642,7 @@ export def Generator {
             @ZeroValue(node.TypeName, target)
         }
         if (global) {
-            @Emit("SETG " .: node.Name .: " r" .: target)
+            @Emit("SETG " .: @Q(node.Name) .: " r" .: target)
             @Next = mark
         } else if (find(NUMERIC_TYPES, node.TypeName) >= 0) {
             @DeclareTyped(node.Name, target, node.TypeName)
@@ -584,7 +772,7 @@ export def Generator {
                     @Emit("MOVE " .: r .: " r" .: local)
                 }
             } else if (find(@Globals, node.Name) >= 0) {
-                @Emit("GETG " .: r .: " " .: node.Name)
+                @Emit("GETG " .: r .: " " .: @Q(node.Name))
             } else if (find(@Functions, node.Name) >= 0 or find(BUILTINS, node.Name) >= 0) {
                 @Fail(node, "functions are not values yet: call " .: node.Name .: "(...)")
             } else {
@@ -600,6 +788,9 @@ export def Generator {
                 number container = @Operand(node.Children[0])
                 number key = @Operand(node.Children[1])
                 @Emit("INDEX " .: r .: " r" .: container .: " r" .: key)
+            } else if (@LinkedPrefix(node.Children[0]) != "") {
+                << Alias.NAME: a global of a linked module.
+                @Emit("GETG " .: r .: " " .: @LinkedPrefix(node.Children[0]) .: "$" .: node.Name)
             } else if (@NativeModule(node.Children[0]) != "") {
                 << Math.pi: a constant of a standard module.
                 @Emit("CALLB " .: r .: " " .: @NativeModule(node.Children[0]) .: "." .: node.Name .: " " .: r .: " 0")
@@ -608,10 +799,15 @@ export def Generator {
             }
         } else if (kind == Ast.NodeKind::ScopeExpression) {
             Ast.Node owner = node.Children[0]
-            if (owner.Kind != Ast.NodeKind::IdentifierExpression or find(@Enums, owner.Name) < 0) {
-                @Fail(node, "'::' needs an enum class declared in this file")
+            string enumName = ""
+            if (owner.Kind == Ast.NodeKind::IdentifierExpression and find(@Enums, owner.Name) >= 0) {
+                enumName = @Q(owner.Name)
+            } else if (owner.Kind == Ast.NodeKind::MemberExpression and @LinkedPrefix(owner.Children[0]) != "") {
+                enumName = @LinkedPrefix(owner.Children[0]) .: "$" .: owner.Name
+            } else {
+                @Fail(node, "'::' needs an enum class")
             }
-            @Emit("ENUM " .: r .: " " .: owner.Name .: " " .: node.Name)
+            @Emit("ENUM " .: r .: " " .: enumName .: " " .: node.Name)
         } else if (kind == Ast.NodeKind::CallExpression) {
             @Call(node, target)
         } else if (kind == Ast.NodeKind::UnaryExpression) {
@@ -697,7 +893,17 @@ export def Generator {
             @Expression(node.Children[0], target)
         } else if (kind == Ast.NodeKind::TypedExpression) {
             @Expression(node.Children[0], target)
-            @Convert(target, node.TypeName, @IsLiteralNumber(node.Children[0]))
+            string typeName = node.TypeName
+            number dot = Text.indexOf(typeName, ".")
+            if (dot > 0) {
+                number alias = find(@LinkAliases, typeName[0 .. dot])
+                if (alias >= 0) {
+                    typeName = @LinkPrefixes[alias] .: "$" .: typeName[dot + 1 .. len(typeName)]
+                }
+            } else if (@FindDef(typeName).Name != "" or find(@Enums, typeName) >= 0) {
+                typeName = @Q(typeName)
+            }
+            @Convert(target, typeName, @IsLiteralNumber(node.Children[0]))
         } else if (kind == Ast.NodeKind::ObjectConstruction) {
             @Construct(node, target)
         } else {
@@ -738,7 +944,7 @@ export def Generator {
 
         if (callee.Kind == Ast.NodeKind::IdentifierExpression) {
             if (find(@Functions, callee.Name) >= 0) {
-                head = "CALL r" .: target .: " " .: callee.Name
+                head = "CALL r" .: target .: " " .: @Q(callee.Name)
             } else if (find(BUILTINS, callee.Name) >= 0 and @Local(callee.Name) < 0) {
                 head = "CALLB r" .: target .: " " .: callee.Name
             } else if (@FindDef(callee.Name).Name != "") {
@@ -746,6 +952,8 @@ export def Generator {
             } else {
                 @Fail(node, "'" .: callee.Name .: "' is not a function")
             }
+        } else if (callee.Kind == Ast.NodeKind::MemberExpression and @LinkedPrefix(callee.Children[0]) != "") {
+            head = "CALL r" .: target .: " " .: @LinkedPrefix(callee.Children[0]) .: "$" .: callee.Name
         } else if (callee.Kind == Ast.NodeKind::MemberExpression and @NativeModule(callee.Children[0]) != "") {
             head = "CALLB r" .: target .: " " .: @NativeModule(callee.Children[0]) .: "." .: callee.Name
         } else if (callee.Kind == Ast.NodeKind::MemberExpression and callee.Name != "[]") {
@@ -771,18 +979,25 @@ export def Generator {
 
     void Construct(Ast.Node node, number target) {
         Ast.Node typePath = node.Children[0]
-        if (typePath.Kind != Ast.NodeKind::IdentifierExpression) {
-            @Fail(node, "only defs declared in this file can be constructed yet")
+        Ast.Node definition = Ast.Node { Name = "" }
+        string typeName = ""
+        if (typePath.Kind == Ast.NodeKind::IdentifierExpression) {
+            definition = @FindDef(typePath.Name)
+            typeName = @Q(typePath.Name)
+        } else if (typePath.Kind == Ast.NodeKind::MemberExpression and @LinkedPrefix(typePath.Children[0]) != "") {
+            string prefix = @LinkedPrefix(typePath.Children[0])
+            definition = @LinkedModule(prefix).FindDef(typePath.Name)
+            typeName = prefix .: "$" .: typePath.Name
         }
-        Ast.Node definition = @FindDef(typePath.Name)
         if (definition.Name == "") {
-            @Fail(node, "'" .: typePath.Name .: "' is not a def declared in this file")
+            @Fail(node, "'" .: typePath.Name .: "' is not a def")
         }
 
         << Build into a fresh register: field values may read the target.
         number object = @Alloc()
-        @Emit("NEW r" .: object .: " " .: definition.Name)
-        array<string> provided = array<string>()
+        number ignored = @Alloc()
+        @Emit("NEW r" .: object .: " " .: typeName)
+        @Emit("CALLM r" .: ignored .: " r" .: object .: " __defaults r" .: ignored .: " 0")
         number index = 1
         while (index < len(node.Children)) {
             Ast.Node field = node.Children[index]
@@ -796,19 +1011,7 @@ export def Generator {
                 @Fail(field, "def " .: definition.Name .: " has no field '" .: field.Name .: "'")
             }
             @Emit("SETF r" .: object .: " " .: field.Name .: " r" .: @Operand(field.Children[0]))
-            push(provided, field.Name)
             index += 1
-        }
-        for (Ast.Node member in definition.Children) {
-            if (member.Kind == Ast.NodeKind::FieldDeclaration and find(provided, member.Name) < 0) {
-                number value = @Alloc()
-                if (len(member.Children) > 0) {
-                    @Expression(member.Children[0], value)
-                } else {
-                    @ZeroValue(member.TypeName, value)
-                }
-                @Emit("SETF r" .: object .: " " .: member.Name .: " r" .: value)
-            }
         }
         @Emit("MOVE r" .: target .: " r" .: object)
     }
@@ -825,7 +1028,7 @@ export def Generator {
             if (local >= 0) {
                 @Emit("MOVE r" .: local .: " r" .: value)
             } else if (find(@Globals, place.Name) >= 0) {
-                @Emit("SETG " .: place.Name .: " r" .: value)
+                @Emit("SETG " .: @Q(place.Name) .: " r" .: value)
             } else {
                 @Fail(place, "'" .: place.Name .: "' is not defined")
             }
@@ -900,12 +1103,22 @@ export def Generator {
 }
 
 <<{
+    !name = "Generate"
     !desc = "Compiles one parsed module to CL++ bytecode text for clpp-vm."
     !params = "module: the parsed module, tokens: its tokens (for line numbers), sourcePath: shown in runtime errors"
     !return = "the .clpb text"
 }>>
 export string Generate(Ast.Module module, array<TokenModule.Token> tokens, string sourcePath) {
     Generator generator = Generator {
+        Prefix = "",
+        Modules = Registry {
+            Paths = array<string>(),
+            Prefixes = array<string>(),
+            Modules = array<Generator>(),
+            Inits = array<string>()
+        },
+        LinkAliases = array<string>(),
+        LinkPrefixes = array<string>(),
         SourcePath = sourcePath,
         Tokens = tokens,
         Lines = array<string>(),

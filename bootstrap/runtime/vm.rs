@@ -61,8 +61,8 @@ impl Value {
             Value::Str(_) => "string".into(),
             Value::Array(_) => "array".into(),
             Value::Dict(_) => "dictionary".into(),
-            Value::Object(o) => p.defs[o.def as usize].name.clone(),
-            Value::Enum(e, _) => p.enums[*e as usize].name.clone(),
+            Value::Object(o) => plain(&p.defs[o.def as usize].name).to_string(),
+            Value::Enum(e, _) => plain(&p.enums[*e as usize].name).to_string(),
             Value::Range(..) => "range".into(),
         }
     }
@@ -137,16 +137,21 @@ fn display(p: &Program, v: &Value, out: &mut String, depth: usize) {
             out.push('}');
         }
         Value::Object(o) => {
-            let _ = write!(out, "{} {{...}}", p.defs[o.def as usize].name);
+            let _ = write!(out, "{} {{...}}", plain(&p.defs[o.def as usize].name));
         }
         Value::Enum(e, i) => {
             let info = &p.enums[*e as usize];
-            let _ = write!(out, "{}::{}", info.name, info.variants[*i as usize]);
+            let _ = write!(out, "{}::{}", plain(&info.name), info.variants[*i as usize]);
         }
         Value::Range(a, b) => {
             let _ = write!(out, "{} .. {}", a, b);
         }
     }
+}
+
+/// `ast$Node` -> `Node`: names of linked modules carry a prefix.
+fn plain(name: &str) -> &str {
+    name.rsplit('$').next().unwrap_or(name)
 }
 
 fn text(p: &Program, v: &Value) -> String {
@@ -258,6 +263,8 @@ pub enum Ins {
 
 pub struct Func {
     pub name: String,
+    /// Source file of the module this function came from.
+    pub source: String,
     pub params: u32,
     pub regs: u32,
     pub code: Vec<Ins>,
@@ -424,6 +431,7 @@ pub fn load(source: &str) -> Result<Program, String> {
     // Raw function bodies; names are resolved after every declaration is known.
     struct RawFunc {
         name: String,
+        source: String,
         params: u32,
         regs: u32,
         lines: Vec<(usize, u32, Vec<String>)>,
@@ -432,6 +440,7 @@ pub fn load(source: &str) -> Result<Program, String> {
     let mut raw: Vec<RawFunc> = Vec::new();
     let mut current: Option<RawFunc> = None;
     let mut source_line = 0u32;
+    let mut current_source = String::new();
     let mut saw_header = false;
 
     for (number, line) in source.lines().enumerate() {
@@ -454,7 +463,12 @@ pub fn load(source: &str) -> Result<Program, String> {
                 saw_header = true;
             }
             ".module" => program.module = parts.get(1).cloned().unwrap_or_default(),
-            ".source" => program.source = trimmed[".source".len()..].trim().to_string(),
+            ".source" => {
+                current_source = trimmed[".source".len()..].trim().to_string();
+                if program.source.is_empty() {
+                    program.source = current_source.clone();
+                }
+            }
             ".enum" => program.enums.push(EnumInfo { name: parts[1].clone(), variants: parts[2..].to_vec() }),
             ".def" => {
                 let mut fields = Vec::new();
@@ -483,6 +497,7 @@ pub fn load(source: &str) -> Result<Program, String> {
                 }
                 current = Some(RawFunc {
                     name: parts[1].clone(),
+                    source: current_source.clone(),
                     params: num(&parts[2]).map_err(err)?,
                     regs: num(&parts[3]).map_err(err)?,
                     lines: Vec::new(),
@@ -634,7 +649,7 @@ pub fn load(source: &str) -> Result<Program, String> {
         if f.regs < f.params {
             return Err(format!("function {} has fewer registers than parameters", f.name));
         }
-        program.funcs.push(Func { name: f.name, params: f.params, regs: f.regs, code, lines });
+        program.funcs.push(Func { name: f.name, source: f.source, params: f.params, regs: f.regs, code, lines });
     }
     if !program.funcs.iter().any(|f| f.name == "__main") {
         return Err("bytecode has no __main function".into());
@@ -679,14 +694,14 @@ impl<'p> Vm<'p> {
         Vm { p, regs: Vec::new(), frames: Vec::new(), handlers: Vec::new(), globals: vec![Value::Null; p.globals.len()], args }
     }
 
-    /// Innermost frame first: (function, source line).
-    fn frames_info(&self) -> Vec<(String, u32)> {
+    /// Innermost frame first: (function, source line, source file).
+    fn frames_info(&self) -> Vec<(String, u32, String)> {
         self.frames
             .iter()
             .rev()
             .map(|f| {
                 let func = &self.p.funcs[f.func as usize];
-                (func.name.clone(), func.lines.get(f.pc.saturating_sub(1)).copied().unwrap_or(0))
+                (func.name.clone(), func.lines.get(f.pc.saturating_sub(1)).copied().unwrap_or(0), func.source.clone())
             })
             .collect()
     }
@@ -1307,37 +1322,33 @@ fn set_index(p: &Program, target: &Value, key: Value, value: Value) -> Result<()
 /// Loads and runs a `.clpb` file. Returns the process exit code.
 pub struct VmError {
     pub message: String,
-    pub frames: Vec<(String, u32)>,
+    pub frames: Vec<(String, u32, String)>,
 }
 
-fn render_vm_error(p: &Program, e: &VmError) -> String {
-    let (line, rest) = match e.frames.split_first() {
-        Some(((_, line), rest)) => (*line as usize, rest),
-        None => (0, &[][..]),
+fn render_vm_error(_p: &Program, e: &VmError) -> String {
+    let trace: Vec<String> = e.frames.iter().map(|(name, line, file)| format!("{} ({}:{})", name, file, line)).collect();
+    let (line, file) = match e.frames.first() {
+        Some((_, line, file)) => (*line as usize, file.clone()),
+        None => (0, String::new()),
     };
-    let mut trace: Vec<String> = Vec::new();
-    if let Some((name, _)) = e.frames.first() {
-        trace.push(format!("{} (line {})", name, line));
-    }
-    trace.extend(rest.iter().map(|(name, l)| format!("{} (line {})", name, l)));
-    if p.source.is_empty() || line == 0 {
+    if file.is_empty() || line == 0 {
         let mut out = format!("error: {}", e.message);
         for t in trace {
             out.push_str(&format!("\n  in {}", t));
         }
-        return out;
+        return out + "\n";
     }
     let report = crate::diag::Report {
         severity: "error",
         message: e.message.clone(),
-        file: p.source.clone(),
+        file: file.clone(),
         line,
         col: 0,
         len: 0,
         help: None,
         trace,
     };
-    crate::diag::render(&report, std::fs::read_to_string(&p.source).ok().as_deref())
+    crate::diag::render(&report, std::fs::read_to_string(&file).ok().as_deref())
 }
 
 pub fn run_file(path: &str, args: Vec<String>) -> i32 {

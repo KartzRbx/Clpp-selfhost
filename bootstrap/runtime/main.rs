@@ -6,6 +6,7 @@
 //!   clpp-boot check <file.clp>...    report errors without running
 //!   clpp-boot fmt [--check] <file>...  format files in place
 //!   clpp-boot lsp                    language server over stdio
+//!   clpp-boot bootstrap              the compiler compiles itself; stages must match
 //!   clpp-boot golden [dir]           interpreter vs compiled bytecode (default: tests/golden)
 
 mod analysis;
@@ -141,6 +142,46 @@ fn golden(dir: &Path) -> bool {
     failed == 0 && !files.is_empty()
 }
 
+/// Self-hosting check: the compiler compiled by itself must reproduce itself.
+///   stage 1: clpp-boot runs src/clpp.clp to compile src/clpp.clp
+///   stage 2: clpp-vm runs stage 1 to compile src/clpp.clp
+///   stage 3: clpp-vm runs stage 2 to compile src/clpp.clp
+/// Stages 1, 2 and 3 must be byte for byte identical.
+fn bootstrap() -> bool {
+    use std::process::Command;
+    let exe = std::env::current_exe().expect("current exe");
+    let vm = exe.with_file_name(if cfg!(windows) { "clpp-vm.exe" } else { "clpp-vm" });
+    let dir = std::env::temp_dir().join(format!("clpp-bootstrap-{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&dir);
+    let stage = |n: u32| dir.join(format!("stage{}.clpb", n));
+    let mut ok = true;
+    for n in 1..=3u32 {
+        let started = std::time::Instant::now();
+        let status = if n == 1 {
+            Command::new(&exe).args(["src/clpp.clp", "src/clpp.clp"]).arg(stage(1)).status()
+        } else {
+            Command::new(&vm).arg(stage(n - 1)).arg("src/clpp.clp").arg(stage(n)).status()
+        };
+        if !matches!(status, Ok(s) if s.success()) {
+            println!("stage {}: compile failed", n);
+            ok = false;
+            break;
+        }
+        let size = std::fs::metadata(stage(n)).map(|m| m.len()).unwrap_or(0);
+        let runner = if n == 1 { "clpp-boot" } else { "clpp-vm" };
+        print!("stage {}: {} compiled the compiler ({} bytes, {:.1}s)", n, runner, size, started.elapsed().as_secs_f64());
+        if n > 1 {
+            let same = std::fs::read(stage(n - 1)).ok() == std::fs::read(stage(n)).ok();
+            print!("  {}", if same { "identical to the previous stage" } else { "DIFFERENT from the previous stage" });
+            ok &= same;
+        }
+        println!();
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+    println!("{}", if ok { "self-hosting: OK" } else { "self-hosting: FAILED" });
+    ok
+}
+
 fn usage() -> ExitCode {
     eprintln!(
         "usage:\n  clpp-boot <file.clp> [args...]\n  clpp-boot test [dir]\n  clpp-boot check <file.clp>...\n  clpp-boot lsp"
@@ -230,6 +271,13 @@ fn real_main() -> ExitCode {
                 }
             }
             if ok {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::FAILURE
+            }
+        }
+        Some("bootstrap") => {
+            if bootstrap() {
                 ExitCode::SUCCESS
             } else {
                 ExitCode::FAILURE

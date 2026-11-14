@@ -16,8 +16,10 @@ formatting); VS Code extension with icons; `clpp-boot fmt`; readable error repor
 `@clpp.math`, `@clpp.text`, `@clpp.table`, `@clpp.fs`; sized numbers including `f16`;
 `(Type value)`; `TODO`/`FIXME` annotations.
 
-Still open, in order: codegen for `link` between files (needed to compile the compiler
-itself), a real type checker, generics, `match`, lambdas, buffers, concurrency,
+Self-hosting reached: `clpp-boot bootstrap` compiles the compiler with itself and the
+stage 1, 2 and 3 bytecode files are identical; `link` between files is compiled.
+
+Still open, in order: a real type checker, generics, `match`, lambdas, buffers, concurrency,
 package manager, debugger.
 
 ## 0. Bootstrap (critical path)
@@ -29,7 +31,7 @@ compile itself. `clpp-boot` is that stage 0.
 | --- | --- | --- |
 | Bootstrap host that runs `src/**/*.clp` | done | `clpp-boot`, a tree-walking interpreter in Rust (`bootstrap/runtime/`). No type checking. |
 | Run `tests/**/*.clp` from one command | done | `clpp-boot test tests`. |
-| Stage 2: the self-hosted compiler compiles itself | planned | Output must match the stage-1 output byte for byte. |
+| Stage 2: the self-hosted compiler compiles itself | done | `clpp-boot bootstrap`: stages 1, 2 and 3 are byte for byte identical. |
 
 ## 1. Core language
 

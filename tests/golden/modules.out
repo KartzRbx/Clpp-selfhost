@@ -1,0 +1,11 @@
+units loaded
+shapes loaded
+main starts
+shape (Kind::Square) area 100
+coin (Kind::Circle) area 12
+true
+200 cm
+300 cm
+conversions: 2
+{"red"} 0
+true
